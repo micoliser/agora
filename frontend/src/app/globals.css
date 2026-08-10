@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-vertex-bg: #0B061D;
+  --color-vertex-card: #130E26;
+  --color-vertex-border: #291F4A;
+  --color-vertex-primary: #8250DF;
+  --color-vertex-primary-hover: #9666F3;
+  --color-vertex-muted: #B6B1CD;
+  --color-vertex-text: #FFFFFF;
+  --color-vertex-success: #00FF66;
+  --color-vertex-error: #FF2B2B;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+  
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: var(--color-vertex-bg);
+  --foreground: var(--color-vertex-text);
+  --card: var(--color-vertex-card);
+  --card-foreground: var(--color-vertex-text);
+  --popover: var(--color-vertex-card);
+  --popover-foreground: var(--color-vertex-text);
+  --primary: var(--color-vertex-primary);
+  --primary-foreground: var(--color-vertex-text);
+  --secondary: var(--color-vertex-card);
+  --secondary-foreground: var(--color-vertex-text);
+  --muted: var(--color-vertex-border);
+  --muted-foreground: var(--color-vertex-muted);
+  --accent: var(--color-vertex-primary);
+  --accent-foreground: var(--color-vertex-text);
+  --destructive: var(--color-vertex-error);
+  --border: var(--color-vertex-border);
+  --input: var(--color-vertex-border);
+  --ring: var(--color-vertex-primary);
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: var(--color-vertex-bg);
+  --foreground: var(--color-vertex-text);
+  --card: var(--color-vertex-card);
+  --card-foreground: var(--color-vertex-text);
+  --popover: var(--color-vertex-card);
+  --popover-foreground: var(--color-vertex-text);
+  --primary: var(--color-vertex-primary);
+  --primary-foreground: var(--color-vertex-text);
+  --secondary: var(--color-vertex-card);
+  --secondary-foreground: var(--color-vertex-text);
+  --muted: var(--color-vertex-border);
+  --muted-foreground: var(--color-vertex-muted);
+  --accent: var(--color-vertex-primary);
+  --accent-foreground: var(--color-vertex-text);
+  --destructive: var(--color-vertex-error);
+  --border: var(--color-vertex-border);
+  --input: var(--color-vertex-border);
+  --ring: var(--color-vertex-primary);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
