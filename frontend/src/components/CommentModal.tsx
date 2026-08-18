@@ -7,25 +7,26 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { PenSquare, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useTransaction } from '@/hooks/useTransaction'
 import { useApi } from '@/hooks/useApi'
 
 const FORUM_ADDRESS = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS as `0x${string}`
 
-interface CreatePostDialogProps {
-  communityId: number;
-  disabled?: boolean;
+interface CommentModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  postId: number;
+  postAuthor: string;
+  postContent: string;
+  onCommentAdded?: () => void;
 }
 
-export function CreatePostDialog({ communityId, disabled }: CreatePostDialogProps) {
-  const [open, setOpen] = useState(false)
+export function CommentModal({ open, onOpenChange, postId, postAuthor, postContent, onCommentAdded }: CommentModalProps) {
   const [content, setContent] = useState('')
-
   const { execute, isLocked } = useTransaction()
   const { fetchApi } = useApi()
 
@@ -36,56 +37,62 @@ export function CreatePostDialog({ communityId, disabled }: CreatePostDialogProp
 
     await execute(
       FORUM_ADDRESS,
-      'create_post',
-      [BigInt(communityId), content],
+      'create_comment',
+      [BigInt(postId), content],
       {
         confirmingMessage: 'Please sign the transaction...',
-        submittedMessage: 'Validating with GenVM...',
-        confirmedMessage: 'Post published successfully!',
+        submittedMessage: 'Validating comment with GenVM...',
+        confirmedMessage: 'Comment added successfully!',
         onConfirmed: async () => {
           try {
-            await fetchApi("/api/indexer/latest-post/", { method: "POST" })
+            await fetchApi("/api/indexer/latest-comment/", { method: "POST" })
           } catch (e) {
-            console.error("Failed to sync latest post", e)
+            console.error("Failed to sync latest comment", e)
           }
-          setOpen(false)
+          onOpenChange(false)
           setContent('')
           await new Promise(resolve => setTimeout(resolve, 2000));
-          window.location.reload()
+          if (onCommentAdded) {
+            onCommentAdded();
+          }
         }
       }
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button className="rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 font-semibold h-11 px-6" />
-        }
-      >
-        <PenSquare className="w-5 h-5 mr-2" />
-        Create Post
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] bg-background/95 backdrop-blur-xl border-border/50">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px] bg-background/95 backdrop-blur-xl border-border/50">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-            New Post
+          <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            Reply to Post
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Share your thoughts. GenVM will verify this post against the hub&apos;s constitution.
+            GenVM will verify this comment against the hub's constitution.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Original Post Context */}
+        <div className="mt-4 p-4 rounded-xl bg-surface/30 border border-border/40 text-sm">
+          <div className="flex items-center gap-2 mb-2 text-muted-foreground">
+            <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-full text-xs">
+              {postAuthor.slice(0, 6)}...{postAuthor.slice(-4)}
+            </span>
+          </div>
+          <p className="text-foreground line-clamp-3 italic opacity-80 border-l-2 border-primary/30 pl-3">
+            "{postContent}"
+          </p>
+        </div>
         
         <form onSubmit={handleSubmit} className="space-y-6 mt-4">
           <div className="space-y-2">
             <Textarea
               id="content"
-              placeholder="What's on your mind?"
+              placeholder="Write your reply..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               disabled={isLocked}
-              className="min-h-[150px] bg-surface/50 border-border/50 focus-visible:ring-primary resize-none"
+              className="min-h-[120px] bg-surface/50 border-border/50 focus-visible:ring-primary resize-none"
             />
           </div>
 
@@ -100,7 +107,7 @@ export function CreatePostDialog({ communityId, disabled }: CreatePostDialogProp
                 Validating with GenVM...
               </>
             ) : (
-              'Publish Post'
+              'Post Reply'
             )}
           </Button>
         </form>

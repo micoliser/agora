@@ -1,9 +1,10 @@
 'use client'
 
 import { useAccount } from 'wagmi'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useMounted } from '@/hooks/useMounted'
-import { MessageSquare, ArrowRight, PlusCircle } from 'lucide-react'
+import { useApi } from '@/hooks/useApi'
+import { MessageSquare, ArrowRight, PlusCircle, Loader2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,21 +21,56 @@ interface Community {
 export default function CommunitiesPage() {
   const { isConnected } = useAccount()
   const mounted = useMounted()
+  const { fetchApi } = useApi()
+  
   const [communities, setCommunities] = useState<Community[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [isFetchingMore, setIsFetchingMore] = useState(false)
+  const limit = 20
+
+  const fetchCommunities = async (currentOffset: number) => {
+    try {
+      const res = await fetchApi(`/api/communities/?limit=${limit}&offset=${currentOffset}`)
+      const data = await res.json()
+      if (data.length < limit) {
+        setHasMore(false)
+      }
+      return data
+    } catch (err) {
+      console.error(err)
+      return []
+    }
+  }
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/communities/')
-      .then(res => res.json())
-      .then(data => {
-        setCommunities(data)
-        setIsLoading(false)
-      })
-      .catch((err) => {
-        console.error(err)
-        setIsLoading(false)
-      })
+    setIsLoading(true)
+    fetchCommunities(0).then(data => {
+      setCommunities(data)
+      setIsLoading(false)
+    })
   }, [])
+
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const lastCommunityElementRef = useCallback((node: HTMLDivElement) => {
+    if (isLoading || isFetchingMore) return
+    if (observerRef.current) observerRef.current.disconnect()
+    
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        setIsFetchingMore(true)
+        const nextOffset = offset + limit
+        fetchCommunities(nextOffset).then(newData => {
+          setCommunities(prev => [...prev, ...newData])
+          setOffset(nextOffset)
+          setIsFetchingMore(false)
+        })
+      }
+    })
+    
+    if (node) observerRef.current.observe(node)
+  }, [isLoading, isFetchingMore, hasMore, offset])
 
   return (
     <div className="flex flex-col min-h-screen pt-32 pb-20 px-4 sm:px-6 lg:px-12 max-w-screen-2xl mx-auto w-full">
@@ -75,33 +111,42 @@ export default function CommunitiesPage() {
         </div>
       ) : communities.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {communities.map((comm) => (
-            <Card key={comm.id} className="group bg-[#130E26] border-[#291F4A] hover:border-primary/50 transition-all duration-300 flex flex-col justify-between overflow-hidden">
-              <CardHeader>
-                <div className="flex justify-between items-start mb-4">
-                  <CardTitle className="text-2xl font-bold font-heading text-white">
-                    {comm.name}
-                  </CardTitle>
-                  <Badge variant="secondary" className="font-mono bg-[#0D091B] border border-[#291F4A] text-[#9375E0] text-xs">
-                    #{comm.id}
-                  </Badge>
-                </div>
-                <CardDescription className="text-muted-foreground line-clamp-3 leading-relaxed">
-                  {comm.description}
-                </CardDescription>
-              </CardHeader>
-              <CardFooter className="pt-6">
-                <Button 
-                  className="w-full text-sm font-semibold h-12 rounded-md bg-primary hover:bg-primary/90 text-white shadow-lg transition-all" 
-                  render={<Link href={`/community/${comm.id}`} />}
-                  nativeButton={false}
-                >
-                  Enter Hub
-                  <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+          {communities.map((comm, index) => {
+            const isLast = communities.length === index + 1;
+            const content = (
+              <Card className="group h-full bg-[#130E26] border-[#291F4A] hover:border-primary/50 transition-all duration-300 flex flex-col justify-between overflow-hidden">
+                <CardHeader>
+                  <div className="flex justify-between items-start mb-4">
+                    <CardTitle className="text-2xl font-bold font-heading text-white">
+                      {comm.name}
+                    </CardTitle>
+                    <Badge variant="secondary" className="font-mono bg-[#0D091B] border border-[#291F4A] text-[#9375E0] text-xs">
+                      #{comm.id}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-muted-foreground line-clamp-3 leading-relaxed">
+                    {comm.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardFooter className="pt-6">
+                  <Button 
+                    className="w-full text-sm font-semibold h-12 rounded-md bg-primary hover:bg-primary/90 text-white shadow-lg transition-all" 
+                    render={<Link href={`/community/${comm.id}`} />}
+                    nativeButton={false}
+                  >
+                    Enter Hub
+                    <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </CardFooter>
+              </Card>
+            )
+
+            if (isLast) {
+              return <div ref={lastCommunityElementRef} key={comm.id}>{content}</div>
+            } else {
+              return <div key={comm.id}>{content}</div>
+            }
+          })}
         </div>
       ) : (
         <div className="text-center py-24 bg-[#130E26] rounded-2xl border border-[#291F4A]">
@@ -118,6 +163,12 @@ export default function CommunitiesPage() {
               Deploy Hub
             </Button>
           )}
+        </div>
+      )}
+
+      {isFetchingMore && (
+        <div className="flex justify-center mt-8">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
         </div>
       )}
     </div>

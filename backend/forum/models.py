@@ -56,3 +56,7 @@ class SyncState(models.Model):
     last_community_id_synced = models.IntegerField(default=-1)
     last_post_id_synced = models.IntegerField(default=-1)
     last_comment_id_synced = models.IntegerField(default=-1)
+
+class UserActivity(models.Model):
+    address = models.CharField(max_length=42, primary_key=True)
+    last_flag_time = models.IntegerField(default=0)

@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { useMounted } from '@/hooks/useMounted'
-import { useAccount, useConnect, useDisconnect, useBalance } from 'wagmi'
+import { useEffect, useState } from 'react'
+import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { injected } from 'wagmi/connectors'
-import { formatUnits } from 'viem'
 import { Bell, Shield } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -17,12 +17,8 @@ export function Navbar() {
   const pathname = usePathname()
   const mounted = useMounted()
 
-  const { data: balance } = useBalance({
-    address,
-  })
-
   return (
-    <nav className="absolute top-0 z-50 w-full px-6 py-6 flex items-center justify-between">
+    <nav className="fixed top-0 left-0 z-50 w-full px-6 py-6 flex items-center justify-between bg-[#0C061F]/90 backdrop-blur-xl border-b border-white/5">
       <div className="flex-1 md:flex-none">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
@@ -40,7 +36,7 @@ export function Navbar() {
         <Link href="/#how-it-works" className="px-5 py-2.5 rounded-full transition-colors text-muted-foreground hover:text-white">
           How it Works
         </Link>
-        <Link href="/#hubs" className="px-5 py-2.5 rounded-full transition-colors text-muted-foreground hover:text-white">
+        <Link href="/communities" className={`px-5 py-2.5 rounded-full transition-colors ${pathname === '/communities' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-muted-foreground hover:text-white'}`}>
           Hubs
         </Link>
       </div>
@@ -54,11 +50,6 @@ export function Navbar() {
         {mounted ? (
           isConnected ? (
             <div className="flex items-center gap-3">
-              {balance && (
-                <Badge variant="secondary" className="hidden xl:flex rounded-full bg-[#130E26] border-border text-foreground">
-                  {parseFloat(formatUnits(balance.value, balance.decimals)).toFixed(4)} GEN
-                </Badge>
-              )}
               <Button 
                 variant="outline" 
                 size="sm"

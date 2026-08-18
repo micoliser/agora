@@ -3,33 +3,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode, useState } from 'react'
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { defineChain } from 'viem'
+import { mainnet, sepolia } from 'wagmi/chains'
 import { injected } from 'wagmi/connectors'
 
-// GenLayer Testnet or Simulator
-export const genlayerTestnet = defineChain({
-  id: 1, // Will need actual GenLayer chain id. For now using 1 to bypass strict type errors.
-  name: 'GenLayer Studionet',
-  nativeCurrency: {
-    decimals: 18,
-    name: 'GEN',
-    symbol: 'GEN',
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://studio.genlayer.com/api'], // Using studionet API
-    },
-    public: {
-      http: ['https://studio.genlayer.com/api'],
-    },
-  },
-})
-
 export const config = createConfig({
-  chains: [genlayerTestnet],
+  chains: [mainnet, sepolia],
   connectors: [injected()],
   transports: {
-    [genlayerTestnet.id]: http(),
+    [mainnet.id]: http(),
+    [sepolia.id]: http(),
   },
 })
 

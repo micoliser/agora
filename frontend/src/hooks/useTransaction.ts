@@ -7,6 +7,7 @@ export type TxPhase =
   | "IDLE"
   | "CONFIRMING"
   | "SUBMITTED"
+  | "SYNCING"
   | "CONFIRMED"
   | "FAILED"
   | "UNDETERMINED";
@@ -19,6 +20,7 @@ export interface ExecuteOptions {
   syncRequests?: {
     entityType: string;
     entityId: number | string;
+    currentState?: any;
   }[];
 }
 
@@ -83,34 +85,56 @@ export function useTransaction() {
         }
 
         if (opts?.syncRequests && opts.syncRequests.length > 0) {
-          toast.loading("Syncing updated state...", { id: toastId });
+          setTxPhase("SYNCING");
+          toast.loading("Waiting for GenLayer network to index changes...", { id: toastId });
+          
+          // Small 1-second delay to give GenLayer a head start
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          let syncFailed = false;
           for (const req of opts.syncRequests) {
             try {
-              await fetchApi("/api/indexer/sync-request/", {
+              const payload: any = {
+                entity_type: req.entityType,
+                entity_id: req.entityId,
+              };
+              if (req.currentState) payload.current_state = req.currentState;
+              
+              const res = await fetchApi("/api/indexer/sync-request/", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  entity_type: req.entityType,
-                  entity_id:
-                    typeof req.entityId === "string"
-                      ? parseInt(req.entityId)
-                      : req.entityId,
-                }),
+                body: JSON.stringify(payload),
               });
+              
+              if (!res.ok) {
+                syncFailed = true;
+              }
             } catch (e) {
               console.warn("Failed to manually sync", req, e);
+              syncFailed = true;
             }
           }
+
+          if (syncFailed) {
+            toast.warning(
+              "Transaction confirmed, but the indexer might take a moment to catch up. Please refresh soon.",
+              { id: toastId, duration: 10000 }
+            );
+          }
+        }
+
+        if (opts?.onConfirmed) {
+          if (txPhase !== "SYNCING") {
+            setTxPhase("SYNCING");
+            toast.loading("Syncing updated state...", { id: toastId });
+          }
+          await opts.onConfirmed(receipt);
         }
 
         setTxPhase("CONFIRMED");
         toast.success(opts?.confirmedMessage || "Transaction confirmed!", {
           id: toastId,
         });
-
-        if (opts?.onConfirmed) {
-          await opts.onConfirmed(receipt);
-        }
 
         if (timeoutId!) clearTimeout(timeoutId);
       } catch (err: any) {
@@ -130,17 +154,15 @@ export function useTransaction() {
 
         if (
           errMsg.toLowerCase().includes("timeout") ||
-          errMsg.toLowerCase().includes("timed out") ||
-          errMsg.toLowerCase().includes("failed to fetch")
+          errMsg.toLowerCase().includes("timed out")
         ) {
-          setTxPhase("UNDETERMINED");
-          toast.warning(
-            "The transaction was submitted but we couldn't confirm its outcome due to a network disruption. Please wait a moment and refresh to check.",
-            { id: toastId, duration: 10000 },
-          );
+          // Transaction was submitted but polling timed out (likely rate limited).
+          // The tx probably succeeded on-chain, so still attempt sync + onConfirmed.
+          toast.loading("Syncing state (confirmation timed out, but tx was likely successful)...", { id: toastId });
           
-          // Still try to sync in the background
           if (opts?.syncRequests && opts.syncRequests.length > 0) {
+            // Wait longer since GenLayer was clearly overloaded
+            await new Promise(resolve => setTimeout(resolve, 5000));
             for (const req of opts.syncRequests) {
               try {
                 await fetchApi("/api/indexer/sync-request/", {
@@ -148,12 +170,27 @@ export function useTransaction() {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     entity_type: req.entityType,
-                    entity_id: typeof req.entityId === "string" ? parseInt(req.entityId) : req.entityId,
+                    entity_id: req.entityId,
                   }),
                 });
-              } catch (e) {}
+              } catch (syncErr) {
+                console.warn("Timeout recovery sync failed", req, syncErr);
+              }
             }
           }
+
+          if (opts?.onConfirmed) {
+            try {
+              await opts.onConfirmed(null);
+            } catch (confirmErr) {
+              console.warn("Timeout recovery onConfirmed failed", confirmErr);
+            }
+          }
+
+          setTxPhase("CONFIRMED");
+          toast.success(opts?.confirmedMessage || "Transaction likely confirmed!", {
+            id: toastId,
+          });
           return;
         }
 
@@ -165,7 +202,7 @@ export function useTransaction() {
     [submitTransaction, fetchApi],
   );
 
-  const isLocked = txPhase === "CONFIRMING" || txPhase === "SUBMITTED";
+  const isLocked = txPhase === "CONFIRMING" || txPhase === "SUBMITTED" || txPhase === "SYNCING";
 
   const reset = useCallback(() => {
     setTxPhase("IDLE");

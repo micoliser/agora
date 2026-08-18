@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useTransaction } from '@/hooks/useTransaction'
+import { useApi } from '@/hooks/useApi'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -76,39 +77,18 @@ export default function CreateCommunityPage() {
   const [flagCooldown, setFlagCooldown] = useState('1')
   const [flagCooldownUnit, setFlagCooldownUnit] = useState('hours')
 
-  const { data: hash, writeContract, isPending } = useWriteContract()
-  
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  })
+  const { execute, isLocked } = useTransaction()
+  const { fetchApi } = useApi()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!name || !description || !rules) return
 
-    writeContract({
-      address: FORUM_ADDRESS,
-      abi: [
-        {
-          "name": "create_community",
-          "type": "function",
-          "inputs": [
-            { "name": "name", "type": "string" },
-            { "name": "description", "type": "string" },
-            { "name": "constitution", "type": "string" },
-            { "name": "appeal_window_seconds", "type": "uint256" },
-            { "name": "min_reputation_to_post", "type": "uint256" },
-            { "name": "starting_reputation", "type": "uint256" },
-            { "name": "reputation_penalty_violation", "type": "uint256" },
-            { "name": "reputation_penalty_bad_flag", "type": "uint256" },
-            { "name": "flag_cooldown_seconds", "type": "uint256" }
-          ],
-          "outputs": [{ "name": "", "type": "uint256" }]
-        }
-      ],
-      functionName: 'create_community',
-      args: [
+    await execute(
+      FORUM_ADDRESS,
+      'create_community',
+      [
         name, 
         description, 
         rules,
@@ -119,24 +99,33 @@ export default function CreateCommunityPage() {
         BigInt(repPenaltyBadFlag),
         BigInt(getSeconds(flagCooldown, flagCooldownUnit))
       ],
-    })
-  }
-
-  // Redirect on success
-  if (isSuccess) {
-    // In a real app, you might want to redirect to the specific community
-    // but since we don't have the returned ID from the tx receipt easily mapped yet,
-    // we just go back to communities page
-    router.push('/communities')
+      {
+        confirmingMessage: "Please confirm community creation in your wallet...",
+        submittedMessage: "Community created, waiting for confirmation...",
+        confirmedMessage: "Community deployed successfully!",
+        onConfirmed: async () => {
+          try {
+            await fetchApi("/api/indexer/latest-community/", { method: "POST" })
+          } catch (e) {
+            console.error("Failed to sync latest community", e)
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          router.push('/communities')
+        }
+      }
+    )
   }
 
   return (
     <div className="flex flex-col min-h-screen pt-32 pb-20 px-4 sm:px-6 lg:px-12 max-w-3xl mx-auto w-full">
       <div className="mb-8">
-        <Link href="/communities" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-white transition-colors mb-6">
+        <button 
+          onClick={() => router.back()} 
+          className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-white transition-colors mb-6"
+        >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Hubs
-        </Link>
+          Back
+        </button>
         <h1 className="text-4xl md:text-5xl font-black font-heading tracking-tight text-white flex items-center gap-4">
           <Shield className="w-10 h-10 text-primary" />
           Deploy New Hub
@@ -160,7 +149,7 @@ export default function CreateCommunityPage() {
                 placeholder="e.g. Protocol Research"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                disabled={isPending || isConfirming}
+                disabled={isLocked}
                 className="bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary h-12 text-white"
                 required
               />
@@ -175,7 +164,7 @@ export default function CreateCommunityPage() {
                 placeholder="What is this hub about?"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                disabled={isPending || isConfirming}
+                disabled={isLocked}
                 className="bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary h-12 text-white"
                 required
               />
@@ -190,7 +179,7 @@ export default function CreateCommunityPage() {
                 placeholder="State the rules clearly. E.g. 'No spam. Be respectful. Keep it related to GenLayer.'"
                 value={rules}
                 onChange={(e) => setRules(e.target.value)}
-                disabled={isPending || isConfirming}
+                disabled={isLocked}
                 className="min-h-[160px] bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary resize-none text-white leading-relaxed p-4"
                 required
               />
@@ -215,7 +204,7 @@ export default function CreateCommunityPage() {
                       type="number"
                       value={startingRep}
                       onChange={(e) => setStartingRep(e.target.value)}
-                      disabled={isPending || isConfirming}
+                      disabled={isLocked}
                       className="bg-[#130E26] border-[#291F4A] text-white"
                     />
                   </div>
@@ -229,7 +218,7 @@ export default function CreateCommunityPage() {
                       type="number"
                       value={minRepToPost}
                       onChange={(e) => setMinRepToPost(e.target.value)}
-                      disabled={isPending || isConfirming}
+                      disabled={isLocked}
                       className="bg-[#130E26] border-[#291F4A] text-white"
                     />
                   </div>
@@ -243,7 +232,7 @@ export default function CreateCommunityPage() {
                       type="number"
                       value={repPenaltyViolation}
                       onChange={(e) => setRepPenaltyViolation(e.target.value)}
-                      disabled={isPending || isConfirming}
+                      disabled={isLocked}
                       className="bg-[#130E26] border-[#291F4A] text-white"
                     />
                   </div>
@@ -257,7 +246,7 @@ export default function CreateCommunityPage() {
                       type="number"
                       value={repPenaltyBadFlag}
                       onChange={(e) => setRepPenaltyBadFlag(e.target.value)}
-                      disabled={isPending || isConfirming}
+                      disabled={isLocked}
                       className="bg-[#130E26] border-[#291F4A] text-white"
                     />
                   </div>
@@ -272,10 +261,10 @@ export default function CreateCommunityPage() {
                         type="number"
                         value={appealWindow}
                         onChange={(e) => setAppealWindow(e.target.value)}
-                        disabled={isPending || isConfirming}
+                        disabled={isLocked}
                         className="bg-[#130E26] border-[#291F4A] text-white flex-1"
                       />
-                      <Select value={appealWindowUnit} onValueChange={(val) => setAppealWindowUnit(val || 'hours')} disabled={isPending || isConfirming}>
+                      <Select value={appealWindowUnit} onValueChange={(val) => setAppealWindowUnit(val || 'hours')} disabled={isLocked}>
                         <SelectTrigger className="w-[120px] bg-[#130E26] border-[#291F4A] text-white">
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
@@ -299,10 +288,10 @@ export default function CreateCommunityPage() {
                         type="number"
                         value={flagCooldown}
                         onChange={(e) => setFlagCooldown(e.target.value)}
-                        disabled={isPending || isConfirming}
+                        disabled={isLocked}
                         className="bg-[#130E26] border-[#291F4A] text-white flex-1"
                       />
-                      <Select value={flagCooldownUnit} onValueChange={(val) => setFlagCooldownUnit(val || 'hours')} disabled={isPending || isConfirming}>
+                      <Select value={flagCooldownUnit} onValueChange={(val) => setFlagCooldownUnit(val || 'hours')} disabled={isLocked}>
                         <SelectTrigger className="w-[120px] bg-[#130E26] border-[#291F4A] text-white">
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
@@ -325,9 +314,9 @@ export default function CreateCommunityPage() {
           <Button 
             type="submit" 
             className="w-full h-14 font-bold text-lg rounded-xl bg-primary hover:bg-primary/90 text-white shadow-[0_0_30px_rgba(130,80,223,0.3)] transition-all" 
-            disabled={isPending || isConfirming || !name || !description || !rules}
+            disabled={isLocked || !name || !description || !rules}
           >
-            {isPending || isConfirming ? (
+            {isLocked ? (
               <>
                 <Loader2 className="w-6 h-6 mr-3 animate-spin" />
                 Deploying to GenVM...

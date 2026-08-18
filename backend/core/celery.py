@@ -9,8 +9,8 @@ app.autodiscover_tasks()
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    # Poll every 5 seconds
-    sender.add_periodic_task(5.0, sync_with_genlayer.s(), name='sync every 5s')
+    # Poll every 60 seconds
+    sender.add_periodic_task(300.0, sync_with_genlayer.s(), name='sync every 300s')
 
 @app.task
 def sync_with_genlayer():
