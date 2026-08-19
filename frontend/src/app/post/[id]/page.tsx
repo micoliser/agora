@@ -256,7 +256,7 @@ export default function PostPage() {
   const postIsAuthor = mounted && address?.toLowerCase() === post.author.toLowerCase();
   const postIsHidden = postIsRemoved || postIsAppealDenied;
 
-  if (postIsAppealDenied) return <div className="text-center py-20">Post not found.</div>;
+  if (postIsAppealDenied && !postIsAuthor) return <div className="text-center py-20">Post not found.</div>;
   if (postIsRemoved && !postIsAuthor) return <div className="text-center py-20">Post not found.</div>;
 
   return (
@@ -386,17 +386,17 @@ export default function PostPage() {
             className="bg-transparent border border-[#291F4A] p-3 rounded-2xl relative shadow-inner"
           >
             <Textarea
-              placeholder="Post a reply..."
+              placeholder={postIsHidden ? "You cannot reply to a moderated post." : "Post a reply..."}
               value={commentContent}
               onChange={(e) => setCommentContent(e.target.value)}
               className="min-h-[100px] bg-transparent border-none focus-visible:ring-0 resize-none text-foreground p-2 mb-12 placeholder:text-muted-foreground/70"
-              disabled={isLocked}
+              disabled={isLocked || postIsHidden}
             />
             <div className="absolute bottom-4 right-4">
               <Button
                 type="submit"
                 className="rounded-full shadow-lg h-9 px-5 font-semibold bg-primary hover:bg-primary/90 text-white"
-                disabled={isLocked || !commentContent}
+                disabled={isLocked || !commentContent || postIsHidden}
               >
                 {isLocked ? (
                   <>
@@ -441,7 +441,7 @@ export default function PostPage() {
             const isHidden = isRemoved || isAppealDenied;
             const isAuthor = mounted && address?.toLowerCase() === comment.author.toLowerCase();
 
-            if (isAppealDenied) { router.push('/'); return null; }
+            if (isAppealDenied && !isAuthor) return null;
             if (isRemoved && !isAuthor) return null;
 
             return (

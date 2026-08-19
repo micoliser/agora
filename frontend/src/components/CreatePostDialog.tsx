@@ -60,8 +60,9 @@ export function CreatePostDialog({ communityId, disabled }: CreatePostDialogProp
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        disabled={disabled}
         render={
-          <Button className="rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 font-semibold h-11 px-6" />
+          <Button disabled={disabled} className="rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/40 font-semibold h-11 px-6" />
         }
       >
         <PenSquare className="w-5 h-5 mr-2" />
