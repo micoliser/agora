@@ -21,11 +21,9 @@ export function Navbar() {
   return (
     <nav className="fixed top-0 left-0 z-50 w-full px-6 py-6 flex items-center justify-between bg-[#0C061F]/90 backdrop-blur-xl border-b border-white/5">
       <div className="flex-1 md:flex-none">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-            <Shield className="w-5 h-5 text-primary" />
-          </div>
-          <span className="font-heading font-black text-xl tracking-tight text-white hidden sm:inline-block">Agora</span>
+        <Link href="/" className="flex items-center gap-1.5">
+          <img src="/logo.jpg" alt="Agora Logo" className="w-10 h-10 rounded-full object-cover" />
+          <span className="font-heading font-black text-2xl tracking-tight text-white hidden sm:inline-block pt-0.5">Agora</span>
         </Link>
       </div>
 
@@ -34,7 +32,7 @@ export function Navbar() {
         <Link href="/" className={`px-5 py-2.5 rounded-full transition-colors ${pathname === '/' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-muted-foreground hover:text-white'}`}>
           Home
         </Link>
-        <Link href="/#how-it-works" className="px-5 py-2.5 rounded-full transition-colors text-muted-foreground hover:text-white">
+        <Link href="/how-it-works" className="px-5 py-2.5 rounded-full transition-colors text-muted-foreground hover:text-white">
           How it Works
         </Link>
         <Link href="/communities" className={`px-5 py-2.5 rounded-full transition-colors ${pathname === '/communities' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-muted-foreground hover:text-white'}`}>

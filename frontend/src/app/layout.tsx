@@ -3,6 +3,7 @@ import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
 import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
 
@@ -28,6 +29,7 @@ export default function RootLayout({
             <main className="flex-1">
               {children}
             </main>
+            <Footer />
           </div>
           <Toaster richColors position="top-right" />
         </Providers>
