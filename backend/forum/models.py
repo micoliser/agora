@@ -11,6 +11,7 @@ class Community(models.Model):
     starting_reputation = models.IntegerField()
     reputation_penalty_violation = models.IntegerField()
     reputation_penalty_bad_flag = models.IntegerField()
+    reputation_reward_good_flag = models.IntegerField(default=2)
     flag_cooldown_seconds = models.IntegerField()
     created_at = models.IntegerField()
 
@@ -27,6 +28,7 @@ class Post(models.Model):
     appeal_deadline = models.IntegerField(default=0)
     created_at = models.IntegerField()
     flagged_at = models.IntegerField(default=0)
+    successful_flagger = models.CharField(max_length=42, blank=True, null=True)
 
 class Comment(models.Model):
     id = models.IntegerField(primary_key=True)
@@ -42,6 +44,7 @@ class Comment(models.Model):
     appeal_deadline = models.IntegerField(default=0)
     created_at = models.IntegerField()
     flagged_at = models.IntegerField(default=0)
+    successful_flagger = models.CharField(max_length=42, blank=True, null=True)
 
 class MemberReputation(models.Model):
     community = models.ForeignKey(Community, on_delete=models.CASCADE)
@@ -60,3 +63,11 @@ class SyncState(models.Model):
 class UserActivity(models.Model):
     address = models.CharField(max_length=42, primary_key=True)
     last_flag_time = models.IntegerField(default=0)
+
+class Notification(models.Model):
+    user_address = models.CharField(max_length=42)
+    notification_type = models.CharField(max_length=50)
+    message = models.TextField()
+    link = models.CharField(max_length=255)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -7,7 +7,8 @@ import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { injected } from 'wagmi/connectors'
-import { Bell, Shield } from 'lucide-react'
+import { Shield } from 'lucide-react'
+import { NotificationDropdown } from './NotificationDropdown'
 import { usePathname } from 'next/navigation'
 
 export function Navbar() {
@@ -43,9 +44,7 @@ export function Navbar() {
 
       {/* Right Actions */}
       <div className="flex items-center gap-4 w-48 justify-end">
-        <button className="hidden sm:flex items-center justify-center w-10 h-10 rounded-full bg-[#130E26] border border-border hover:bg-[#1C1635] transition-colors text-muted-foreground">
-          <Bell className="w-4 h-4" />
-        </button>
+        <NotificationDropdown />
 
         {mounted ? (
           isConnected ? (

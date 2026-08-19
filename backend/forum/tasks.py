@@ -1,7 +1,7 @@
 import logging
 import time
 from django.conf import settings
-from .models import Community, Post, Comment, SyncState, MemberReputation, UserActivity
+from .models import Community, Post, Comment, SyncState, MemberReputation, UserActivity, Notification
 
 from eth_account import Account
 from genlayer_py import create_client
@@ -100,20 +100,47 @@ def _sync_single_post(post_id: int, current_state=None) -> bool:
                     continue
             community = Community.objects.filter(id=p_data.get("community_id")).first()
             if community:
+                old_post = Post.objects.filter(id=post_id).first()
+                new_status = p_data.get("status", 0)
+                new_appeal_used = p_data.get("appeal_used", False)
+                author = p_data.get("author", "")
+                successful_flagger = p_data.get("successful_flagger", "")
+                link = f"/post/{post_id}"
+                
+                # Check state changes for notifications
+                if old_post:
+                    # Content Removed
+                    if old_post.status == 0 and new_status == 1:
+                        Notification.objects.get_or_create(user_address=author, notification_type="CONTENT_REMOVED", link=link, defaults={"message": "Your post was flagged and removed."})
+                        if successful_flagger:
+                            Notification.objects.get_or_create(user_address=successful_flagger, notification_type="FLAG_ACCEPTED", link=f"/community/{community.id}", defaults={"message": "Your flag was accepted! You gained reputation."})
+                    
+                    # Appeal Granted
+                    if old_post.status == 1 and new_status == 2:
+                        Notification.objects.get_or_create(user_address=author, notification_type="APPEAL_GRANTED", link=link, defaults={"message": "Your appeal was granted! Your post is restored."})
+                        if old_post.successful_flagger or successful_flagger:
+                            flagger_to_notify = old_post.successful_flagger or successful_flagger
+                            Notification.objects.get_or_create(user_address=flagger_to_notify, notification_type="REP_REWARD_REVERSED", link=link, defaults={"message": "A post you flagged was appealed and restored. Your reputation reward was reversed."})
+
+                    # Appeal Denied
+                    if not old_post.appeal_used and new_appeal_used and new_status == 3:
+                        Notification.objects.get_or_create(user_address=author, notification_type="APPEAL_DENIED", link=link, defaults={"message": "Your appeal was denied. The post remains banned."})
+
                 Post.objects.update_or_create(
                 id=post_id,
                 defaults={
                     "community": community,
-                    "author": p_data.get("author", ""),
+                    "author": author,
                     "content": p_data.get("content", ""),
-                    "status": p_data.get("status", 0),
+                    "status": new_status,
                     "flag_count": p_data.get("flag_count", 0),
                     "moderation_verdict": str(p_data.get("moderation_verdict", "")),
-                    "appeal_used": p_data.get("appeal_used", False),
+                    "appeal_used": new_appeal_used,
                     "appeal_verdict": str(p_data.get("appeal_verdict", "")),
                     "appeal_deadline": p_data.get("appeal_deadline", 0),
                     "created_at": p_data.get("created_at", 0),
                     "flagged_at": p_data.get("flagged_at", 0),
+                    "successful_flagger": successful_flagger,
                 }
             )
             _sync_member_reputation(community.id, p_data.get("author", ""))
@@ -134,21 +161,51 @@ def _sync_single_comment(comment_id: int, current_state=None) -> bool:
             community = Community.objects.filter(id=c_data.get("community_id")).first()
         post = Post.objects.filter(id=c_data.get("post_id")).first()
         if community and post:
+            old_comment = Comment.objects.filter(id=comment_id).first()
+            new_status = c_data.get("status", 0)
+            new_appeal_used = c_data.get("appeal_used", False)
+            author = c_data.get("author", "")
+            successful_flagger = c_data.get("successful_flagger", "")
+            link = f"/post/{post.id}"
+
+            if not old_comment:
+                # New Reply Notification
+                if author != post.author:
+                    Notification.objects.get_or_create(user_address=post.author, notification_type="REPLY", link=link, defaults={"message": "Someone replied to your post."})
+            else:
+                # Content Removed
+                if old_comment.status == 0 and new_status == 1:
+                    Notification.objects.get_or_create(user_address=author, notification_type="CONTENT_REMOVED", link=link, defaults={"message": "Your comment was flagged and removed."})
+                    if successful_flagger:
+                        Notification.objects.get_or_create(user_address=successful_flagger, notification_type="FLAG_ACCEPTED", link=f"/community/{community.id}", defaults={"message": "Your flag was accepted! You gained reputation."})
+                
+                # Appeal Granted
+                if old_comment.status == 1 and new_status == 2:
+                    Notification.objects.get_or_create(user_address=author, notification_type="APPEAL_GRANTED", link=link, defaults={"message": "Your appeal was granted! Your comment is restored."})
+                    if old_comment.successful_flagger or successful_flagger:
+                        flagger_to_notify = old_comment.successful_flagger or successful_flagger
+                        Notification.objects.get_or_create(user_address=flagger_to_notify, notification_type="REP_REWARD_REVERSED", link=link, defaults={"message": "A comment you flagged was appealed and restored. Your reputation reward was reversed."})
+
+                # Appeal Denied
+                if not old_comment.appeal_used and new_appeal_used and new_status == 3:
+                    Notification.objects.get_or_create(user_address=author, notification_type="APPEAL_DENIED", link=link, defaults={"message": "Your appeal was denied. The comment remains banned."})
+
             Comment.objects.update_or_create(
                 id=comment_id,
                 defaults={
                     "community": community,
                     "post": post,
-                    "author": c_data.get("author", ""),
+                    "author": author,
                     "content": c_data.get("content", ""),
-                    "status": c_data.get("status", 0),
+                    "status": new_status,
                     "flag_count": c_data.get("flag_count", 0),
                     "moderation_verdict": str(c_data.get("moderation_verdict", "")),
-                    "appeal_used": c_data.get("appeal_used", False),
+                    "appeal_used": new_appeal_used,
                     "appeal_verdict": str(c_data.get("appeal_verdict", "")),
                     "appeal_deadline": c_data.get("appeal_deadline", 0),
                     "created_at": c_data.get("created_at", 0),
                     "flagged_at": c_data.get("flagged_at", 0),
+                    "successful_flagger": successful_flagger,
                 }
             )
             _sync_member_reputation(community.id, c_data.get("author", ""))

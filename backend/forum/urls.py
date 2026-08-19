@@ -2,6 +2,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('notifications/', views.get_notifications, name='get_notifications'),
+    path('notifications/mark-all-read/', views.mark_all_notifications_read, name='mark_all_notifications_read'),
+    path('notifications/clear/', views.clear_notifications, name='clear_notifications'),
+
+    path('notifications/<int:notification_id>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
+
     path('communities/', views.community_list, name='community_list'),
     path('communities/<int:community_id>/', views.community_detail, name='community_detail'),
     path('communities/<int:community_id>/posts/', views.community_posts, name='community_posts'),

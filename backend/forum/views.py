@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count
-from .models import Community, Post, Comment, UserActivity
+from .models import Community, Post, Comment, UserActivity, Notification
 from .tasks import poll_genlayer_state
 
 def serialize_community(c):
@@ -211,3 +211,61 @@ def user_reputation(request, community_id, address):
             return JsonResponse({"reputation": c.starting_reputation})
         except Community.DoesNotExist:
             return JsonResponse({"error": "Community not found"}, status=404)
+
+def serialize_notification(n):
+    return {
+        "id": n.id,
+        "user_address": n.user_address,
+        "notification_type": n.notification_type,
+        "message": n.message,
+        "link": n.link,
+        "is_read": n.is_read,
+        "created_at": n.created_at.timestamp() if n.created_at else 0
+    }
+
+def get_notifications(request):
+    address = request.GET.get("address")
+    if not address:
+        return JsonResponse({"error": "Missing address"}, status=400)
+    
+    notifications = Notification.objects.filter(user_address__iexact=address).order_by("-created_at")[:50]
+    return JsonResponse([serialize_notification(n) for n in notifications], safe=False)
+
+@csrf_exempt
+def mark_notification_read(request, notification_id):
+    if request.method == "POST":
+        n = get_object_or_404(Notification, id=notification_id)
+        n.is_read = True
+        n.save()
+        return JsonResponse({"success": True})
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+@csrf_exempt
+def mark_all_notifications_read(request):
+    if request.method == "POST":
+        import json
+        try:
+            data = json.loads(request.body)
+            address = data.get("address")
+            if not address:
+                return JsonResponse({"error": "Missing address"}, status=400)
+            Notification.objects.filter(user_address__iexact=address).update(is_read=True)
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+@csrf_exempt
+def clear_notifications(request):
+    if request.method == "POST":
+        import json
+        try:
+            data = json.loads(request.body)
+            address = data.get("address")
+            if not address:
+                return JsonResponse({"error": "Missing address"}, status=400)
+            Notification.objects.filter(user_address__iexact=address).delete()
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"error": "Method not allowed"}, status=405)

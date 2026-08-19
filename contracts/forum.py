@@ -22,6 +22,7 @@ class Community:
     starting_reputation: u256
     reputation_penalty_violation: u256
     reputation_penalty_bad_flag: u256
+    reputation_reward_good_flag: u256
     flag_cooldown_seconds: u256
     post_count: u256
     comment_count: u256
@@ -42,6 +43,7 @@ class Post:
     appeal_deadline: u256
     created_at: u256
     flagged_at: u256
+    successful_flagger: Address
 
 @allow_storage
 @dataclass
@@ -58,6 +60,7 @@ class Comment:
     appeal_deadline: u256
     created_at: u256
     flagged_at: u256
+    successful_flagger: Address
 
 class Forum(gl.Contract):
     communities: TreeMap[u256, Community]
@@ -87,6 +90,7 @@ class Forum(gl.Contract):
         starting_reputation: u256,
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
+        reputation_reward_good_flag: u256,
         flag_cooldown_seconds: u256
     ):
         self.community_count = u256(0)
@@ -104,6 +108,7 @@ class Forum(gl.Contract):
             starting_reputation,
             reputation_penalty_violation,
             reputation_penalty_bad_flag,
+            reputation_reward_good_flag,
             flag_cooldown_seconds
         )
 
@@ -125,6 +130,7 @@ class Forum(gl.Contract):
         starting_reputation: u256,
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
+        reputation_reward_good_flag: u256,
         flag_cooldown_seconds: u256
     ) -> u256:
         if min_reputation_to_post > starting_reputation:
@@ -141,6 +147,7 @@ class Forum(gl.Contract):
             starting_reputation=starting_reputation,
             reputation_penalty_violation=reputation_penalty_violation,
             reputation_penalty_bad_flag=reputation_penalty_bad_flag,
+            reputation_reward_good_flag=reputation_reward_good_flag,
             flag_cooldown_seconds=flag_cooldown_seconds,
             post_count=u256(0),
             comment_count=u256(0),
@@ -161,6 +168,7 @@ class Forum(gl.Contract):
         starting_reputation: u256,
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
+        reputation_reward_good_flag: u256,
         flag_cooldown_seconds: u256
     ) -> u256:
         return self._create_community_internal(
@@ -173,6 +181,7 @@ class Forum(gl.Contract):
             starting_reputation,
             reputation_penalty_violation,
             reputation_penalty_bad_flag,
+            reputation_reward_good_flag,
             flag_cooldown_seconds
         )
 
@@ -213,7 +222,8 @@ class Forum(gl.Contract):
             appeal_verdict="",
             appeal_deadline=u256(0),
             created_at=self._tx_timestamp(),
-            flagged_at=u256(0)
+            flagged_at=u256(0),
+            successful_flagger=Address("0x0000000000000000000000000000000000000000")
         )
         self.post_count += 1
         
@@ -249,7 +259,8 @@ class Forum(gl.Contract):
             appeal_verdict="",
             appeal_deadline=u256(0),
             created_at=self._tx_timestamp(),
-            flagged_at=u256(0)
+            flagged_at=u256(0),
+            successful_flagger=Address("0x0000000000000000000000000000000000000000")
         )
         self.comment_count += 1
         
@@ -341,6 +352,7 @@ POST CONTENT:
             post.moderation_verdict = reason
             post.flagged_at = self._tx_timestamp()
             post.appeal_deadline = self._tx_timestamp() + community.appeal_window_seconds
+            post.successful_flagger = flagger
             
             # Penalize author
             rep_key = f"{post.community_id}:{post.author.as_hex}"
@@ -350,6 +362,11 @@ POST CONTENT:
                 self.reputation[rep_key] = current_rep - penalty
             else:
                 self.reputation[rep_key] = u256(0)
+
+            # Reward flagger for good flag
+            flagger_rep_key = f"{post.community_id}:{flagger.as_hex}"
+            flagger_rep = self._ensure_member_reputation(post.community_id, flagger)
+            self.reputation[flagger_rep_key] = flagger_rep + community.reputation_reward_good_flag
         else:
             # Penalize flagger for bad flag
             rep_key = f"{post.community_id}:{flagger.as_hex}"
@@ -440,6 +457,16 @@ POST CONTENT:
             rep_key = f"{post.community_id}:{post.author.as_hex}"
             current_rep = self.reputation.get(rep_key, u256(0))
             self.reputation[rep_key] = current_rep + community.reputation_penalty_violation
+
+            # Reverse flagger reward (NO ADDITIONAL PENALTY)
+            if post.successful_flagger != Address("0x0000000000000000000000000000000000000000"):
+                flagger_rep_key = f"{post.community_id}:{post.successful_flagger.as_hex}"
+                flagger_rep = self.reputation.get(flagger_rep_key, u256(0))
+                reward = community.reputation_reward_good_flag
+                if flagger_rep > reward:
+                    self.reputation[flagger_rep_key] = flagger_rep - reward
+                else:
+                    self.reputation[flagger_rep_key] = u256(0)
         else:
             post.status = STATUS_APPEAL_DENIED
             
@@ -529,6 +556,7 @@ COMMENT CONTENT:
             comment.moderation_verdict = reason
             comment.flagged_at = self._tx_timestamp()
             comment.appeal_deadline = self._tx_timestamp() + community.appeal_window_seconds
+            comment.successful_flagger = flagger
             
             rep_key = f"{comment.community_id}:{comment.author.as_hex}"
             current_rep = self.reputation.get(rep_key, community.starting_reputation)
@@ -537,6 +565,11 @@ COMMENT CONTENT:
                 self.reputation[rep_key] = current_rep - penalty
             else:
                 self.reputation[rep_key] = u256(0)
+
+            # Reward flagger for good flag
+            flagger_rep_key = f"{comment.community_id}:{flagger.as_hex}"
+            flagger_rep = self._ensure_member_reputation(comment.community_id, flagger)
+            self.reputation[flagger_rep_key] = flagger_rep + community.reputation_reward_good_flag
         else:
             rep_key = f"{comment.community_id}:{flagger.as_hex}"
             current_rep = self._ensure_member_reputation(comment.community_id, flagger)
@@ -631,6 +664,16 @@ COMMENT CONTENT:
             rep_key = f"{comment.community_id}:{comment.author.as_hex}"
             current_rep = self.reputation.get(rep_key, u256(0))
             self.reputation[rep_key] = current_rep + community.reputation_penalty_violation
+
+            # Reverse flagger reward (NO ADDITIONAL PENALTY)
+            if comment.successful_flagger != Address("0x0000000000000000000000000000000000000000"):
+                flagger_rep_key = f"{comment.community_id}:{comment.successful_flagger.as_hex}"
+                flagger_rep = self.reputation.get(flagger_rep_key, u256(0))
+                reward = community.reputation_reward_good_flag
+                if flagger_rep > reward:
+                    self.reputation[flagger_rep_key] = flagger_rep - reward
+                else:
+                    self.reputation[flagger_rep_key] = u256(0)
         else:
             comment.status = STATUS_APPEAL_DENIED
             
@@ -653,6 +696,7 @@ COMMENT CONTENT:
             "starting_reputation": com.starting_reputation,
             "reputation_penalty_violation": com.reputation_penalty_violation,
             "reputation_penalty_bad_flag": com.reputation_penalty_bad_flag,
+            "reputation_reward_good_flag": com.reputation_reward_good_flag,
             "flag_cooldown_seconds": com.flag_cooldown_seconds,
             "post_count": com.post_count,
             "comment_count": com.comment_count,
@@ -676,7 +720,8 @@ COMMENT CONTENT:
             "appeal_verdict": p.appeal_verdict,
             "appeal_deadline": p.appeal_deadline,
             "created_at": p.created_at,
-            "flagged_at": p.flagged_at
+            "flagged_at": p.flagged_at,
+            "successful_flagger": p.successful_flagger.as_hex
         }
 
     @gl.public.view
@@ -696,7 +741,8 @@ COMMENT CONTENT:
             "appeal_verdict": c.appeal_verdict,
             "appeal_deadline": c.appeal_deadline,
             "created_at": c.created_at,
-            "flagged_at": c.flagged_at
+            "flagged_at": c.flagged_at,
+            "successful_flagger": c.successful_flagger.as_hex
         }
 
     @gl.public.view

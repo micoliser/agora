@@ -73,6 +73,7 @@ export default function CreateCommunityPage() {
   const [startingRep, setStartingRep] = useState('10')
   const [repPenaltyViolation, setRepPenaltyViolation] = useState('5')
   const [repPenaltyBadFlag, setRepPenaltyBadFlag] = useState('2')
+  const [repRewardGoodFlag, setRepRewardGoodFlag] = useState('2')
 
   const [flagCooldown, setFlagCooldown] = useState('1')
   const [flagCooldownUnit, setFlagCooldownUnit] = useState('hours')
@@ -97,6 +98,7 @@ export default function CreateCommunityPage() {
         BigInt(startingRep),
         BigInt(repPenaltyViolation),
         BigInt(repPenaltyBadFlag),
+        BigInt(repRewardGoodFlag),
         BigInt(getSeconds(flagCooldown, flagCooldownUnit))
       ],
       {
@@ -246,6 +248,20 @@ export default function CreateCommunityPage() {
                       type="number"
                       value={repPenaltyBadFlag}
                       onChange={(e) => setRepPenaltyBadFlag(e.target.value)}
+                      disabled={isLocked}
+                      className="bg-[#130E26] border-[#291F4A] text-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <LabelWithTooltip 
+                      label="Reputation Reward (Good Flag)" 
+                      tooltip="Points rewarded to a user who successfully flags violating content." 
+                    />
+                    <Input
+                      type="number"
+                      value={repRewardGoodFlag}
+                      onChange={(e) => setRepRewardGoodFlag(e.target.value)}
                       disabled={isLocked}
                       className="bg-[#130E26] border-[#291F4A] text-white"
                     />
