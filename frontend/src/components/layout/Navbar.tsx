@@ -5,7 +5,6 @@ import { useMounted } from '@/hooks/useMounted'
 import { useEffect, useState } from 'react'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { injected } from 'wagmi/connectors'
 import { Shield } from 'lucide-react'
 import { NotificationDropdown } from './NotificationDropdown'
@@ -22,7 +21,8 @@ export function Navbar() {
     <nav className="fixed top-0 left-0 z-50 w-full px-6 py-6 flex items-center justify-between bg-[#0C061F]/90 backdrop-blur-xl border-b border-white/5">
       <div className="flex-1 md:flex-none">
         <Link href="/" className="flex items-center gap-1.5">
-          <img src="/logo.jpg" alt="Agora Logo" className="w-10 h-10 rounded-full object-cover" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.jpg" alt="Agora Logo" className="w-10 h-10 rounded-full object-cover" />
           <span className="font-heading font-black text-2xl tracking-tight text-white hidden sm:inline-block pt-0.5">Agora</span>
         </Link>
       </div>

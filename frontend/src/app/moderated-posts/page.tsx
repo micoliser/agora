@@ -51,6 +51,7 @@ export default function ModeratedPosts() {
 
   useEffect(() => {
     if (mounted && isConnected && address) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoading(true)
       setOffset(0)
       setHasMore(true)

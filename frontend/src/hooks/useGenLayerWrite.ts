@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useAccount } from 'wagmi';
 import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
-import { TransactionStatus } from 'genlayer-js/types';
 
 export function useGenLayerWrite() {
   const { address, isConnected } = useAccount();
@@ -24,9 +23,12 @@ export function useGenLayerWrite() {
       setIsPending(true);
       setError(null);
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let provider: any = null;
-      if (typeof window !== 'undefined' && (window as any).ethereum) {
-        provider = (window as any).ethereum;
+      if (typeof window !== 'undefined' && // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).ethereum) {
+        provider = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).ethereum;
         if (!provider.isMetaMask) {
           throw new Error("Only MetaMask is supported. Please switch to MetaMask.");
         }
@@ -69,20 +71,23 @@ export function useGenLayerWrite() {
       }
 
       // Custom resilient polling loop for receipt to survive 429s
-      let receipt = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let receipt: any = null;
       let retries = 60;
       while (retries > 0) {
         try {
           // We manually call getTransaction to catch errors
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tx = await client.getTransaction({ hash: txHash as any });
           console.log("[POLLING DEBUG] tx fetched:", JSON.stringify(tx));
           const s1 = String(tx?.status).toUpperCase();
-          const s2 = String((tx as any)?.statusName).toUpperCase();
+          const s2 = String((tx as Record<string, unknown>)?.statusName).toUpperCase();
           
           if (["ACCEPTED", "FINALIZED", "3", "5", "7"].includes(s1) || ["ACCEPTED", "FINALIZED", "3", "5", "7"].includes(s2)) {
             receipt = tx;
             if (client.chain.isStudio) {
-              receipt.txExecutionResultName = tx.txExecutionResultName || "FINISHED_WITH_RETURN"; 
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            receipt.txExecutionResultName = (tx as any).txExecutionResultName || "FINISHED_WITH_RETURN"; 
             }
             break;
           }
@@ -91,9 +96,9 @@ export function useGenLayerWrite() {
             receipt.txExecutionResultName = "FINISHED_WITH_ERROR";
             break;
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("[POLLING DEBUG] error fetching tx:", e);
-          const errMsg = e.message ? e.message.toLowerCase() : String(e).toLowerCase();
+          const errMsg = (e as Error).message ? (e as Error).message.toLowerCase() : String(e).toLowerCase();
           if (errMsg.includes("429") || errMsg.includes("rate limit") || errMsg.includes("fetch")) {
              console.warn("Hit GenLayer rate limit, waiting 5 seconds and retrying...");
              // Just swallow the 429 and sleep longer

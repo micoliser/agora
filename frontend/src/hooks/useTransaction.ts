@@ -13,14 +13,14 @@ export type TxPhase =
   | "UNDETERMINED";
 
 export interface ExecuteOptions {
-  onConfirmed?: (receipt: any) => Promise<void> | void;
+  onConfirmed?: (receipt: unknown) => Promise<void> | void;
   confirmingMessage?: string;
   submittedMessage?: string;
   confirmedMessage?: string;
   syncRequests?: {
     entityType: string;
     entityId: number | string;
-    currentState?: any;
+    currentState?: unknown;
   }[];
 }
 
@@ -50,7 +50,7 @@ export function useTransaction() {
           contractAddress,
           functionName,
           args,
-          (hash) => {
+          () => {
             setTxPhase("SUBMITTED");
             toast.loading(
               opts?.submittedMessage ||
@@ -94,7 +94,7 @@ export function useTransaction() {
           let syncFailed = false;
           for (const req of opts.syncRequests) {
             try {
-              const payload: any = {
+              const payload: Record<string, unknown> = {
                 entity_type: req.entityType,
                 entity_id: req.entityId,
               };
@@ -124,7 +124,7 @@ export function useTransaction() {
         }
 
         if (opts?.onConfirmed) {
-          if (txPhase !== "SYNCING") {
+          if (!(opts?.syncRequests && opts.syncRequests.length > 0)) {
             setTxPhase("SYNCING");
             toast.loading("Syncing updated state...", { id: toastId });
           }
@@ -137,10 +137,10 @@ export function useTransaction() {
         });
 
         if (timeoutId!) clearTimeout(timeoutId);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (timeoutId!) clearTimeout(timeoutId);
         console.error("Tx Error:", err);
-        const errMsg = err.message || String(err);
+        const errMsg = (err as Error).message || String(err);
 
         if (
           errMsg.toLowerCase().includes("user rejected") ||

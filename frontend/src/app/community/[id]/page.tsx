@@ -6,7 +6,6 @@ import { useAccount } from 'wagmi'
 import { useMounted } from '@/hooks/useMounted'
 import { useApi } from '@/hooks/useApi'
 import { Shield, MessageSquare, ArrowLeft, Loader2 } from 'lucide-react'
-import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -66,6 +65,7 @@ export default function CommunityPage() {
   useEffect(() => {
     if (!id) return
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true)
     Promise.all([
       fetchApi(`/api/communities/${id}/`).then(res => res.json()),

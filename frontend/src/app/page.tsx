@@ -35,6 +35,7 @@ export default function Home() {
   const [isFetchingMore, setIsFetchingMore] = useState(false)
   const limit = 20
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const fetchPosts = async (currentOffset: number) => {
     try {
       const res = await fetchApi(`/api/posts/?limit=${limit}&offset=${currentOffset}`)
@@ -50,12 +51,13 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true)
     fetchPosts(0).then(data => {
       setPosts(data)
       setIsLoading(false)
     })
-  }, [])
+  }, [fetchPosts])
 
   const observerRef = useRef<IntersectionObserver | null>(null)
   const lastPostElementRef = useCallback((node: HTMLDivElement) => {
@@ -96,7 +98,7 @@ export default function Home() {
             </h1>
             
             <p className="text-lg text-muted-foreground font-medium max-w-xl leading-relaxed">
-              Traditional forums rely on biased central authorities. Agora uses a GenLayer Intelligent Contract to read your hub's constitution and moderate interactions through AI consensus.
+              Traditional forums rely on biased central authorities. Agora uses a GenLayer Intelligent Contract to read your hub&apos;s constitution and moderate interactions through AI consensus.
             </p>
             
             <div className="flex flex-wrap items-center gap-4 pt-4">

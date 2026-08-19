@@ -68,7 +68,7 @@ export function CommentModal({ open, onOpenChange, postId, postAuthor, postConte
             Reply to Post
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            GenVM will verify this comment against the hub's constitution.
+            GenVM will verify this comment against the hub&apos;s constitution.
           </DialogDescription>
         </DialogHeader>
 
@@ -80,7 +80,7 @@ export function CommentModal({ open, onOpenChange, postId, postAuthor, postConte
             </span>
           </div>
           <p className="text-foreground line-clamp-3 italic opacity-80 border-l-2 border-primary/30 pl-3">
-            "{postContent}"
+            &quot;{postContent}&quot;
           </p>
         </div>
         

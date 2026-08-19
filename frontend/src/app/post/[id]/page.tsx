@@ -20,6 +20,7 @@ const FORUM_ADDRESS = process.env
   .NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS as `0x${string}`;
 
 interface Post {
+  flag_count?: number;
   id: number;
   community_id: number;
   author: string;
@@ -37,6 +38,7 @@ interface Community {
 }
 
 interface Comment {
+  flag_count?: number;
   id: number;
   post_id: number;
   author: string;
@@ -73,7 +75,7 @@ export default function PostPage() {
     const s = Math.floor(diff % 60);
     return `Appeal ends in: ${h}h ${m}m ${s}s`;
   };
-  const [currentTime, setCurrentTime] = useState(Date.now() / 1000);
+  const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000);
   
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now() / 1000), 1000);
@@ -101,7 +103,7 @@ export default function PostPage() {
 
   useEffect(() => {
     refreshData();
-  }, [id]);
+  }, [refreshData]);
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,7 +120,7 @@ export default function PostPage() {
         onConfirmed: async () => {
           try {
             await fetchApi("/api/indexer/latest-comment/", { method: "POST" });
-          } catch (e) {}
+          } catch {}
           setCommentContent("");
           await new Promise(resolve => setTimeout(resolve, 2000));
           refreshData();
@@ -137,11 +139,11 @@ export default function PostPage() {
         confirmingMessage: "Submitting flag request...",
         submittedMessage: "GenVM is evaluating the post...",
         confirmedMessage: "Moderation complete!",
-        syncRequests: [{ entityType: 'post', entityId: post.id, currentState: { flag_count: post.flag_count, status: post.status } }, { entityType: 'user_activity', entityId: address as string }],
+        syncRequests: [{ entityType: 'post', entityId: String(post?.id), currentState: { flag_count: post?.flag_count, status: post?.status } }, { entityType: 'user_activity', entityId: address as string }],
         onConfirmed: async () => {
           if (typeof triggerCooldown !== 'undefined') if (typeof triggerCooldown !== 'undefined') triggerCooldown();
           try {
-            const response = await fetchApi(`/api/posts/${post.id}/`);
+            const response = await fetchApi(`/api/posts/${post?.id}/`);
             const data = await response.json();
             if (data.status === 1) toast.success("Flag successful! The content has been removed. The author can appeal the flag.");
             else toast.error("Bad flag. The content does not violate the constitution. You have lost reputation points.");
@@ -163,11 +165,11 @@ export default function PostPage() {
         confirmingMessage: "Submitting appeal...",
         submittedMessage: "GenVM is reviewing your appeal...",
         confirmedMessage: "Appeal process complete!",
-        syncRequests: [{ entityType: 'post', entityId: post.id, currentState: { flag_count: post.flag_count, status: post.status } }, { entityType: 'user_activity', entityId: address as string }],
+        syncRequests: [{ entityType: 'post', entityId: String(post?.id), currentState: { flag_count: post?.flag_count, status: post?.status } }, { entityType: 'user_activity', entityId: address as string }],
           onConfirmed: async () => {
             if (typeof triggerCooldown !== 'undefined') if (typeof triggerCooldown !== 'undefined') triggerCooldown();
             try {
-              const response = await fetchApi(`/api/posts/${post.id}/`);
+              const response = await fetchApi(`/api/posts/${post?.id}/`);
               const data = await response.json();
               if (data.status === 2) toast.success("Appeal successful! The content has been restored.");
               else if (data.status === 3) toast.error("Appeal denied. The content remains removed and you have lost reputation points.");
@@ -191,14 +193,14 @@ export default function PostPage() {
         confirmedMessage: "Moderation complete!",
         syncRequests: [{ entityType: 'comment', entityId: commentId, currentState: (() => {
           const c = comments.find(c => c.id === commentId);
-          return c ? { flag_count: c.flag_count, status: c.status } : undefined;
+          return c ? { flag_count: c?.flag_count, status: c?.status } : undefined;
         })() }, { entityType: 'user_activity', entityId: address as string }],
         onConfirmed: async () => {
           if (typeof triggerCooldown !== 'undefined') if (typeof triggerCooldown !== 'undefined') triggerCooldown();
           try {
-            const response = await fetchApi(`/api/posts/${post.id}/comments/`);
+            const response = await fetchApi(`/api/posts/${post?.id}/comments/`);
             const data = await response.json();
-            const target = data.find((c: any) => c.id === commentId);
+            const target = data.find((c: Comment) => c.id === commentId);
             if (target && target.status === 1) toast.success("Flag successful! The content has been removed. The author can appeal the flag.");
             else toast.error("Bad flag. The content does not violate the constitution. You have lost reputation points.");
           } catch(e) { console.error(e); }
@@ -221,14 +223,14 @@ export default function PostPage() {
         confirmedMessage: "Appeal process complete!",
         syncRequests: [{ entityType: 'comment', entityId: commentId, currentState: (() => {
           const c = comments.find(c => c.id === commentId);
-          return c ? { flag_count: c.flag_count, status: c.status } : undefined;
+          return c ? { flag_count: c?.flag_count, status: c?.status } : undefined;
         })() }, { entityType: 'user_activity', entityId: address as string }],
           onConfirmed: async () => {
             if (typeof triggerCooldown !== 'undefined') if (typeof triggerCooldown !== 'undefined') triggerCooldown();
             try {
-              const response = await fetchApi(`/api/posts/${post.id}/comments/`);
+              const response = await fetchApi(`/api/posts/${post?.id}/comments/`);
               const data = await response.json();
-              const target = data.find((c: any) => c.id === commentId);
+              const target = data.find((c: Comment) => c.id === commentId);
               if (target && target.status === 2) toast.success("Appeal successful! The content has been restored.");
               else if (target && target.status === 3) toast.error("Appeal denied. The content remains removed and you have lost reputation points.");
             } catch(e) { console.error(e); }
@@ -250,9 +252,9 @@ export default function PostPage() {
 
   if (!post) return <div className="text-center py-20">Post not found.</div>;
 
-  const postIsRemoved = post.status === 1;
-  const postIsRestored = post.status === 2;
-  const postIsAppealDenied = post.status === 3;
+  const postIsRemoved = post?.status === 1;
+  const postIsRestored = post?.status === 2;
+  const postIsAppealDenied = post?.status === 3;
   const postIsAuthor = mounted && address?.toLowerCase() === post.author.toLowerCase();
   const postIsHidden = postIsRemoved || postIsAppealDenied;
 
@@ -347,7 +349,7 @@ export default function PostPage() {
             {post.content}
           </p>
         </CardContent>
-        {(!postIsAuthor && post.status === 0) && (
+        {(!postIsAuthor && post?.status === 0) && (
           <CardFooter className="px-6 py-3 border-t border-[#291F4A] bg-black/10 flex justify-end">
             <Button 
               variant="ghost" 
@@ -375,7 +377,7 @@ export default function PostPage() {
           <MessageCircle className="w-5 h-5 text-primary" />
           <h3 className="text-2xl font-bold text-foreground">Comments</h3>
           <span className="bg-surface border border-border/40 px-3 py-1 rounded-full text-sm font-medium ml-auto">
-            {comments.filter(c => c.status !== 3 && !(c.status === 1 && currentTime >= c.appeal_deadline) && !(c.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length}
+            {comments.filter(c => c?.status !== 3 && !(c?.status === 1 && currentTime >= c.appeal_deadline) && !(c?.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length}
           </span>
         </div>
 
@@ -425,7 +427,7 @@ export default function PostPage() {
 
         {/* Comments List */}
         <div className="relative pl-10 space-y-4">
-          {comments.filter(c => c.status !== 3 && !(c.status === 1 && currentTime >= c.appeal_deadline) && !(c.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length > 0 && (
+          {comments.filter(c => c?.status !== 3 && !(c?.status === 1 && currentTime >= c.appeal_deadline) && !(c?.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length > 0 && (
             <div className="absolute left-4 top-[24px] bottom-8 w-[2px] bg-gradient-to-b from-[#291F4A] to-transparent z-0" />
           )}
 
@@ -543,7 +545,7 @@ export default function PostPage() {
               </div>
             );
           })}
-          {comments.filter(c => c.status !== 3 && !(c.status === 1 && currentTime >= c.appeal_deadline) && !(c.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length === 0 && (
+          {comments.filter(c => c?.status !== 3 && !(c?.status === 1 && currentTime >= c.appeal_deadline) && !(c?.status === 1 && c.author.toLowerCase() !== address?.toLowerCase())).length === 0 && (
             <div className="text-center py-10 bg-transparent border border-[#291F4A] border-dashed rounded-2xl">
               <p className="text-muted-foreground">
                 No comments yet. Be the first to reply!

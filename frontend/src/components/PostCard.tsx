@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 const FORUM_ADDRESS = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS as `0x${string}`
 
 interface Post {
+  flag_count?: number;
   id: number;
   community_id: number;
   community_name?: string;
@@ -47,7 +48,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
   const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post.community_id)
   
   // React to Hydration
-  const [currentTime, setCurrentTime] = useState(Date.now() / 1000)
+  const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000)
   
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now() / 1000), 1000)
@@ -64,9 +65,9 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
   };
 
   // Handle masking based on status
-  const isRemoved = post.status === 1;
-  const isRestored = post.status === 2;
-  const isAppealDenied = post.status === 3;
+  const isRemoved = post?.status === 1;
+  const isRestored = post?.status === 2;
+  const isAppealDenied = post?.status === 3;
   const isHidden = isRemoved || isAppealDenied;
 
   const isAuthor = mounted && address?.toLowerCase() === post.author.toLowerCase();
@@ -97,11 +98,11 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
         confirmingMessage: 'Submitting flag request...',
         submittedMessage: 'GenVM is evaluating the post...',
         confirmedMessage: 'Moderation complete!',
-        syncRequests: [{ entityType: 'post', entityId: post.id, currentState: { flag_count: post.flag_count, status: post.status } }, { entityType: 'user_activity', entityId: address as string }],
+        syncRequests: [{ entityType: 'post', entityId: String(post?.id), currentState: { flag_count: post?.flag_count, status: post?.status } }, { entityType: 'user_activity', entityId: address as string }],
         onConfirmed: async () => {
           if (typeof triggerCooldown !== 'undefined') triggerCooldown();
           try {
-            const response = await fetchApi(`/api/posts/${post.id}/`);
+            const response = await fetchApi(`/api/posts/${post?.id}/`);
             const data = await response.json();
             if (data.status === 1) toast.success("Flag successful! The content has been removed. The author can appeal the flag.");
             else toast.error("Bad flag. The content does not violate the constitution. You have lost reputation points.");
@@ -126,11 +127,11 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
         confirmingMessage: 'Submitting appeal...',
         submittedMessage: 'GenVM is reviewing your appeal...',
         confirmedMessage: 'Appeal process complete!',
-        syncRequests: [{ entityType: 'post', entityId: post.id, currentState: { flag_count: post.flag_count, status: post.status } }, { entityType: 'user_activity', entityId: address as string }],
+        syncRequests: [{ entityType: 'post', entityId: String(post?.id), currentState: { flag_count: post?.flag_count, status: post?.status } }, { entityType: 'user_activity', entityId: address as string }],
         onConfirmed: async () => {
           if (typeof triggerCooldown !== 'undefined') triggerCooldown();
           try {
-            const response = await fetchApi(`/api/posts/${post.id}/`);
+            const response = await fetchApi(`/api/posts/${post?.id}/`);
             const data = await response.json();
             if (data.status === 2) toast.success("Appeal successful! The content has been restored.");
             else if (data.status === 3) toast.error("Appeal denied. The content remains removed and you have lost reputation points.");
@@ -144,7 +145,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
 
   return (
     <>
-      <Link href={`/post/${post.id}`} className="block h-full">
+      <Link href={`/post/${post?.id}`} className="block h-full">
         <Card className="group h-full flex flex-col bg-[#130E26] border border-[#291F4A] hover:border-primary/50 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/5 cursor-pointer relative overflow-hidden rounded-2xl">
           
           {isHidden && (
@@ -245,7 +246,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
                 </Button>
               )}
               
-              {!isAuthor && post.status === 0 && (
+              {!isAuthor && post?.status === 0 && (
                 <Button 
                   variant="ghost" 
                   size="sm" 

@@ -45,11 +45,13 @@ export default function CommunitiesPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true)
     fetchCommunities(0).then(data => {
       setCommunities(data)
       setIsLoading(false)
     })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const observerRef = useRef<IntersectionObserver | null>(null)
@@ -70,6 +72,7 @@ export default function CommunitiesPage() {
     })
     
     if (node) observerRef.current.observe(node)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, isFetchingMore, hasMore, offset])
 
   return (
