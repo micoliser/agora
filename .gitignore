@@ -64,3 +64,6 @@ coverage/
 # AI Agents & Skills
 .agents/
 AGENTS.md
+
+test_venv/
+pytest_venv/

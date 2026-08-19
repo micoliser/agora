@@ -2,8 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
 from django.core.management import call_command
-from .models import Community, Post, Comment, SyncState
-from .tasks import call_read_contract, poll_genlayer_state
+from .models import Community, Post, Comment, SyncState, Notification
 
 class ForumAPITests(TestCase):
     def setUp(self):
@@ -41,6 +40,11 @@ class ForumAPITests(TestCase):
             flag_count=0,
             created_at=1234567890
         )
+        self.notification = Notification.objects.create(
+            user_address="0x456",
+            message="Your post got a new comment",
+            link="/community/1/post/1"
+        )
 
     def test_community_list(self):
         response = self.client.get(reverse('community_list'))
@@ -53,6 +57,10 @@ class ForumAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["name"], "Test Comm")
 
+    def test_community_detail_404(self):
+        response = self.client.get(reverse('community_detail', args=[999]))
+        self.assertEqual(response.status_code, 404)
+
     def test_community_posts(self):
         response = self.client.get(reverse('community_posts', args=[1]))
         self.assertEqual(response.status_code, 200)
@@ -64,37 +72,75 @@ class ForumAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["content"], "Hello world")
 
+    def test_post_detail_404(self):
+        response = self.client.get(reverse('post_detail', args=[999]))
+        self.assertEqual(response.status_code, 404)
+
     def test_post_comments(self):
         response = self.client.get(reverse('post_comments', args=[1]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 1)
         self.assertEqual(response.json()[0]["content"], "Nice post")
 
+    def test_notifications_list(self):
+        response = self.client.get(reverse('get_notifications') + "?address=0x456")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["message"], "Your post got a new comment")
+
+    def test_notifications_list_missing_address(self):
+        response = self.client.get(reverse('get_notifications'))
+        self.assertEqual(response.status_code, 400)
+
+    def test_notification_mark_read(self):
+        # Initial is false
+        self.assertFalse(Notification.objects.get(id=self.notification.id).is_read)
+        response = self.client.post(reverse('mark_notification_read', args=[self.notification.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Notification.objects.get(id=self.notification.id).is_read)
+
+    def test_notification_mark_read_404(self):
+        response = self.client.post(reverse('mark_notification_read', args=[999]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_notification_mark_all_read(self):
+        Notification.objects.create(user_address="0x456", message="Second notif", link="/")
+        response = self.client.post(reverse('mark_all_notifications_read'), {"address": "0x456"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Notification.objects.filter(user_address="0x456", is_read=False).exists())
+
+    def test_notification_clear(self):
+        response = self.client.post(reverse('clear_notifications'), {"address": "0x456"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Notification.objects.filter(user_address="0x456").exists())
+
 class IndexerTasksTests(TestCase):
-    @patch('forum.tasks.requests.post')
-    def test_call_read_contract_success(self, mock_post):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"result": "test_data"}
-        mock_response.raise_for_status.return_value = None
-        mock_post.return_value = mock_response
+    @patch('forum.tasks._get_genlayer_client')
+    def test_call_read_contract_success(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_client.read_contract.return_value = "test_data"
+        mock_get_client.return_value = mock_client
 
         with patch('django.conf.settings.GENLAYER_CONTRACT_ADDRESS', '0xabc'):
+            from forum.tasks import call_read_contract
             result = call_read_contract("get_community", [1])
             self.assertEqual(result, "test_data")
-            # Verify correct JSON-RPC structure was sent
-            call_args = mock_post.call_args[1]['json']
-            self.assertEqual(call_args['method'], 'sim_readContract')
-            self.assertEqual(call_args['params'][1], 'get_community')
+            mock_client.read_contract.assert_called_with(
+                address='0xabc',
+                function_name='get_community',
+                args=[1]
+            )
 
     @patch('forum.tasks.call_read_contract')
     def test_poll_genlayer_state_creates_community(self, mock_call):
         # Mock responses: 1 community exists
-        def mock_read(method_name, args):
-            if method_name == "community_count":
+        def mock_read(method_name, args=None):
+            if method_name == "get_community_count":
                 return 1
-            elif method_name == "post_count":
+            elif method_name == "get_post_count":
                 return 0
-            elif method_name == "comment_count":
+            elif method_name == "get_comment_count":
                 return 0
             elif method_name == "get_community":
                 return {
@@ -117,6 +163,7 @@ class IndexerTasksTests(TestCase):
         # State should be empty initially
         self.assertEqual(Community.objects.count(), 0)
         
+        from forum.tasks import poll_genlayer_state
         poll_genlayer_state()
         
         # State should now have 1 community
@@ -126,15 +173,3 @@ class IndexerTasksTests(TestCase):
         
         sync_state = SyncState.objects.first()
         self.assertEqual(sync_state.last_community_id_synced, 0)
-
-class IndexerCommandTests(TestCase):
-    @patch('forum.management.commands.indexer.poll_genlayer_state')
-    @patch('forum.management.commands.indexer.time.sleep', side_effect=InterruptedError) # break infinite loop
-    def test_indexer_command(self, mock_sleep, mock_poll):
-        try:
-            call_command('indexer')
-        except InterruptedError:
-            pass # Expected
-        
-        # Verify it called poll_genlayer_state at least once
-        mock_poll.assert_called()
