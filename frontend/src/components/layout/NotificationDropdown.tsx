@@ -5,6 +5,7 @@ import { Bell, Check, ExternalLink } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import { useRouter } from 'next/navigation'
 import { useMounted } from '@/hooks/useMounted'
+import { useApi } from '@/hooks/useApi'
 
 interface Notification {
   id: number
@@ -22,6 +23,7 @@ export function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
   const mounted = useMounted()
+  const { fetchApi } = useApi()
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function NotificationDropdown() {
     if (!address) return
     const fetchNotifications = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/notifications/?address=${address}`)
+        const res = await fetchApi(`/api/notifications/?address=${address}`)
         if (res.ok) {
           const data = await res.json()
           setNotifications(data)
@@ -60,7 +62,7 @@ export function NotificationDropdown() {
 
   const markAsRead = async (id: number, link: string) => {
     try {
-      await fetch(`http://localhost:8000/api/notifications/${id}/mark-read/`, { method: 'POST' })
+      await fetchApi(`/api/notifications/${id}/mark-read/`, { method: 'POST' })
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
       if (link) {
         router.push(link)
@@ -74,7 +76,7 @@ export function NotificationDropdown() {
 
   const markAllAsRead = async () => {
     try {
-      await fetch(`http://localhost:8000/api/notifications/mark-all-read/`, { 
+      await fetchApi(`/api/notifications/mark-all-read/`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address })
@@ -87,7 +89,7 @@ export function NotificationDropdown() {
 
   const clearAll = async () => {
     try {
-      await fetch(`http://localhost:8000/api/notifications/clear/`, { 
+      await fetchApi(`/api/notifications/clear/`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address })

@@ -79,7 +79,6 @@ export function useGenLayerWrite() {
           // We manually call getTransaction to catch errors
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tx = await client.getTransaction({ hash: txHash as any });
-          console.log("[POLLING DEBUG] tx fetched:", JSON.stringify(tx));
           const s1 = String(tx?.status).toUpperCase();
           const s2 = String((tx as Record<string, unknown>)?.statusName).toUpperCase();
           

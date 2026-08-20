@@ -1,4 +1,12 @@
+
 import time
+import jwt
+import uuid
+import datetime
+from django.conf import settings
+from django.core.cache import cache
+from eth_account.messages import encode_defunct
+from eth_account import Account
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -27,6 +35,7 @@ def serialize_post(p):
         "id": p.id,
         "community_id": p.community_id,
         "community_name": p.community.name if hasattr(p, 'community') else None,
+        "flag_cooldown_seconds": p.community.flag_cooldown_seconds if hasattr(p, 'community') else 0,
         "author": p.author,
         "content": p.content,
         "status": p.status,
@@ -45,6 +54,7 @@ def serialize_comment(c):
         "id": c.id,
         "community_id": c.community_id,
         "post_id": c.post_id,
+        "flag_cooldown_seconds": c.community.flag_cooldown_seconds if hasattr(c, 'community') else 0,
         "author": c.author,
         "content": c.content,
         "status": c.status,
@@ -90,10 +100,74 @@ def post_detail(request, post_id):
     return JsonResponse(serialize_post(p))
 
 def post_comments(request, post_id):
-    comments = Comment.objects.filter(post_id=post_id).order_by("created_at")
+    comments = Comment.objects.filter(post_id=post_id, status__in=[0, 2]).order_by("created_at")
     return JsonResponse([serialize_comment(c) for c in comments], safe=False)
 
-from .tasks import sync_entity, call_read_contract
+from .tasks import sync_entity, async_sync_entity, call_read_contract
+
+def jwt_required(func):
+    def wrapper(request, *args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return JsonResponse({'error': 'Unauthorized'}, status=401)
+        token = auth_header.split(' ')[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+            request.user_address = payload.get('address')
+        except jwt.ExpiredSignatureError:
+            return JsonResponse({'error': 'Token expired'}, status=401)
+        except jwt.InvalidTokenError:
+            return JsonResponse({'error': 'Invalid token'}, status=401)
+        return func(request, *args, **kwargs)
+    return wrapper
+
+@csrf_exempt
+def auth_nonce(request):
+    if request.method == 'GET':
+        address = request.GET.get('address')
+        if not address:
+            return JsonResponse({'error': 'Missing address'}, status=400)
+        nonce = str(uuid.uuid4())
+        cache.set(f"nonce_{address.lower()}", nonce, timeout=300)
+        return JsonResponse({'nonce': nonce})
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def auth_verify(request):
+    if request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            address = data.get('address', '').lower()
+            signature = data.get('signature', '')
+            message = data.get('message', '')
+            
+            expected_nonce = cache.get(f"nonce_{address}")
+            if not expected_nonce:
+                return JsonResponse({'error': 'Nonce expired or invalid'}, status=400)
+                
+            if expected_nonce not in message:
+                return JsonResponse({'error': 'Message does not contain the correct nonce'}, status=400)
+                
+            message_hash = encode_defunct(text=message)
+            recovered_address = Account.recover_message(message_hash, signature=signature)
+            
+            if recovered_address.lower() != address:
+                return JsonResponse({'error': 'Signature verification failed'}, status=401)
+                
+            cache.delete(f"nonce_{address}")
+            
+            # Issue JWT
+            payload = {
+                'address': address,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)
+            }
+            token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+            return JsonResponse({'token': token})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 
 @csrf_exempt
 def sync_request(request):
@@ -109,13 +183,18 @@ def sync_request(request):
                     current_state = data.get("current_state", None)
                     print("SYNC REQUEST DATA:", data)
                     if entity_type and entity_id is not None:
-                        sync_entity(entity_type, entity_id, current_state)
-                        return JsonResponse({"status": "synced"})
+                        if current_state:
+                            from .tasks import sync_entity
+                            success = sync_entity(entity_type, entity_id, current_state)
+                            return JsonResponse({"status": "synced" if success else "failed"})
+                        else:
+                            async_sync_entity.delay(entity_type, entity_id, current_state)
+                            return JsonResponse({"status": "queued"})
                 except json.JSONDecodeError:
                     pass
             return JsonResponse({"error": "Invalid request or missing entity_type/entity_id"}, status=400)
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": str(e)}, status=500)
+            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
@@ -136,7 +215,7 @@ def latest_community(request):
 
             return JsonResponse({"error": "Failed to sync community - block state not updated"}, status=500)
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": str(e)}, status=500)
+            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
@@ -156,7 +235,7 @@ def latest_post(request):
 
             return JsonResponse({"error": "Failed to sync post - block state not updated"}, status=500)
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": str(e)}, status=500)
+            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
@@ -176,21 +255,28 @@ def latest_comment(request):
 
             return JsonResponse({"error": "Failed to sync comment - block state not updated"}, status=500)
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": str(e)}, status=500)
+            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
 def last_flag_time(request):
     if request.method == "GET":
+        from .models import MemberReputation
         address = request.GET.get("address", "")
+        community_id = request.GET.get("community_id", "")
         if not address:
             return JsonResponse({"error": "address is required"}, status=400)
         try:
-            profile = UserActivity.objects.filter(address=address).first()
-            timestamp = profile.last_flag_time if profile else 0
-            return JsonResponse({"last_flag_time": timestamp})
+            if community_id and community_id != "undefined":
+                profile = MemberReputation.objects.filter(address=address, community_id=community_id).first()
+                timestamp = profile.last_flag_time if profile else 0
+                return JsonResponse({"last_flag_time": timestamp})
+            else:
+                profiles = MemberReputation.objects.filter(address=address)
+                data = {str(p.community_id): p.last_flag_time for p in profiles}
+                return JsonResponse({"last_flag_times": data})
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": str(e)}, status=500)
+            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
@@ -223,32 +309,30 @@ def serialize_notification(n):
         "created_at": n.created_at.timestamp() if n.created_at else 0
     }
 
+@jwt_required
 def get_notifications(request):
-    address = request.GET.get("address")
-    if not address:
-        return JsonResponse({"error": "Missing address"}, status=400)
-    
+    address = request.user_address
     notifications = Notification.objects.filter(user_address__iexact=address).order_by("-created_at")[:50]
     return JsonResponse([serialize_notification(n) for n in notifications], safe=False)
 
 @csrf_exempt
+@jwt_required
 def mark_notification_read(request, notification_id):
     if request.method == "POST":
         n = get_object_or_404(Notification, id=notification_id)
+        if n.user_address.lower() != request.user_address.lower():
+            return JsonResponse({"error": "Unauthorized"}, status=401)
         n.is_read = True
         n.save()
         return JsonResponse({"success": True})
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
+@jwt_required
 def mark_all_notifications_read(request):
     if request.method == "POST":
-        import json
         try:
-            data = json.loads(request.body)
-            address = data.get("address")
-            if not address:
-                return JsonResponse({"error": "Missing address"}, status=400)
+            address = request.user_address
             Notification.objects.filter(user_address__iexact=address).update(is_read=True)
             return JsonResponse({"success": True})
         except Exception as e:
@@ -256,14 +340,11 @@ def mark_all_notifications_read(request):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
+@jwt_required
 def clear_notifications(request):
     if request.method == "POST":
-        import json
         try:
-            data = json.loads(request.body)
-            address = data.get("address")
-            if not address:
-                return JsonResponse({"error": "Missing address"}, status=400)
+            address = request.user_address
             Notification.objects.filter(user_address__iexact=address).delete()
             return JsonResponse({"success": True})
         except Exception as e:

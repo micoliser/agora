@@ -50,6 +50,7 @@ class MemberReputation(models.Model):
     community = models.ForeignKey(Community, on_delete=models.CASCADE)
     address = models.CharField(max_length=42)
     reputation = models.IntegerField(default=0)
+    last_flag_time = models.IntegerField(default=0)
 
     class Meta:
         unique_together = ('community', 'address')

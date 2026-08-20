@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { useTransaction } from "@/hooks/useTransaction";
 import { useMounted } from "@/hooks/useMounted";
@@ -23,6 +23,7 @@ interface Post {
   flag_count?: number;
   id: number;
   community_id: number;
+  flag_cooldown_seconds?: number;
   author: string;
   content: string;
   status: number;
@@ -65,7 +66,7 @@ export default function PostPage() {
   const [commentContent, setCommentContent] = useState("");
 
   const { execute, isLocked } = useTransaction();
-  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post?.community_id);
+  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post?.community_id, post?.flag_cooldown_seconds);
   
   const formatTimeRemaining = (deadline: number) => {
     const diff = deadline - currentTime;
@@ -82,7 +83,7 @@ export default function PostPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const refreshData = () => {
+  const refreshData = useCallback(() => {
     if (!id) return;
     Promise.all([
       fetchApi(`/api/posts/${id}/`).then((res) => res.json()),
@@ -99,7 +100,7 @@ export default function PostPage() {
           });
       })
       .catch(console.error);
-  };
+  }, [id, fetchApi]);
 
   useEffect(() => {
     refreshData();
@@ -345,7 +346,7 @@ export default function PostPage() {
           </div>
         </CardHeader>
         <CardContent className="px-6 pb-6 pt-3 relative z-10">
-          <p className="text-lg text-foreground leading-relaxed whitespace-pre-wrap">
+          <p className="text-lg text-foreground leading-relaxed whitespace-pre-wrap break-words overflow-hidden">
             {post.content}
           </p>
         </CardContent>
@@ -518,7 +519,7 @@ export default function PostPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-2.5 pb-2 pt-1">
-                    <p className="text-foreground/90 leading-snug whitespace-pre-wrap text-[13px]">
+                    <p className="text-foreground/90 leading-snug whitespace-pre-wrap break-words text-[13px] overflow-hidden">
                       {comment.content}
                     </p>
                   </CardContent>

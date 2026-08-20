@@ -2,6 +2,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('auth/nonce/', views.auth_nonce, name='auth_nonce'),
+    path('auth/verify/', views.auth_verify, name='auth_verify'),
+
     path('notifications/', views.get_notifications, name='get_notifications'),
     path('notifications/mark-all-read/', views.mark_all_notifications_read, name='mark_all_notifications_read'),
     path('notifications/clear/', views.clear_notifications, name='clear_notifications'),

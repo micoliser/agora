@@ -30,7 +30,7 @@ export default function CommunitiesPage() {
   const [isFetchingMore, setIsFetchingMore] = useState(false)
   const limit = 20
 
-  const fetchCommunities = async (currentOffset: number) => {
+  const fetchCommunities = useCallback(async (currentOffset: number) => {
     try {
       const res = await fetchApi(`/api/communities/?limit=${limit}&offset=${currentOffset}`)
       const data = await res.json()
@@ -42,7 +42,7 @@ export default function CommunitiesPage() {
       console.error(err)
       return []
     }
-  }
+  }, [fetchApi, limit])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

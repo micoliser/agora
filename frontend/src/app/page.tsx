@@ -13,6 +13,7 @@ import { PostCard } from '@/components/PostCard'
 interface Post {
   id: number;
   community_id: number;
+  flag_cooldown_seconds?: number;
   community_name?: string;
   author: string;
   content: string;
@@ -35,8 +36,7 @@ export default function Home() {
   const [isFetchingMore, setIsFetchingMore] = useState(false)
   const limit = 20
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const fetchPosts = async (currentOffset: number) => {
+  const fetchPosts = useCallback(async (currentOffset: number) => {
     try {
       const res = await fetchApi(`/api/posts/?limit=${limit}&offset=${currentOffset}`)
       const data = await res.json()
@@ -48,7 +48,7 @@ export default function Home() {
       console.error(err)
       return []
     }
-  }
+  }, [fetchApi, limit])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

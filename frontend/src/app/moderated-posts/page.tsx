@@ -12,6 +12,7 @@ import { PostCard } from '@/components/PostCard'
 interface Post {
   id: number;
   community_id: number;
+  flag_cooldown_seconds?: number;
   community_name?: string;
   author: string;
   content: string;

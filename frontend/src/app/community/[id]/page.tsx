@@ -23,6 +23,7 @@ interface Community {
 interface Post {
   id: number;
   community_id: number;
+  flag_cooldown_seconds?: number;
   community_name?: string;
   author: string;
   content: string;
@@ -48,7 +49,7 @@ export default function CommunityPage() {
   const [isFetchingMore, setIsFetchingMore] = useState(false)
   const limit = 20
 
-  const fetchPosts = async (currentOffset: number) => {
+  const fetchPosts = useCallback(async (currentOffset: number) => {
     try {
       const res = await fetchApi(`/api/communities/${id}/posts/?limit=${limit}&offset=${currentOffset}`)
       const data = await res.json()
@@ -60,7 +61,7 @@ export default function CommunityPage() {
       console.error(err)
       return []
     }
-  }
+  }, [fetchApi, limit, id])
 
   useEffect(() => {
     if (!id) return

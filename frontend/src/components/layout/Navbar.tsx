@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useMounted } from '@/hooks/useMounted'
+import { useAuth } from '@/hooks/useAuth'
 import { useEffect, useState } from 'react'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
@@ -14,6 +15,7 @@ export function Navbar() {
   const { address, isConnected } = useAccount()
   const { connect } = useConnect()
   const { disconnect } = useDisconnect()
+  const { logout } = useAuth()
   const pathname = usePathname()
   const mounted = useMounted()
 
@@ -51,7 +53,7 @@ export function Navbar() {
                 variant="outline" 
                 size="sm"
                 className="rounded-full bg-[#130E26] border-border hover:bg-[#1C1635] text-foreground font-semibold h-10 px-4"
-                onClick={() => disconnect()}
+                onClick={() => { logout(); disconnect(); }}
               >
                 {address?.slice(0, 6)}...{address?.slice(-4)}
               </Button>

@@ -63,6 +63,7 @@ export default function CreateCommunityPage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [rules, setRules] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Advanced Settings (with sensible defaults)
   const [appealWindow, setAppealWindow] = useState('24')
@@ -82,8 +83,37 @@ export default function CreateCommunityPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const newErrors: Record<string, string> = {}
     
-    if (!name || !description || !rules) return
+    if (!name) newErrors.name = "Name is required"
+    if (!description) newErrors.description = "Description is required"
+    if (!rules) newErrors.rules = "Constitution is required"
+    
+    if (name.length > 100) newErrors.name = "Name cannot exceed 100 characters"
+    if (description.length > 2000) newErrors.description = "Description cannot exceed 2000 characters"
+    if (rules.length > 5000) newErrors.rules = "Constitution cannot exceed 5000 characters"
+
+    const appealSecs = getSeconds(appealWindow, appealWindowUnit)
+    if (appealSecs < 3600 || appealSecs > 2592000) {
+      newErrors.appealWindow = "Appeal window must be between 1 hour and 30 days"
+    }
+    
+    const cooldownSecs = getSeconds(flagCooldown, flagCooldownUnit)
+    if (cooldownSecs < 60 || cooldownSecs > 86400) {
+      newErrors.flagCooldown = "Flag cooldown must be between 1 minute and 24 hours"
+    }
+    
+    if (Number(repPenaltyViolation) <= 0) {
+      newErrors.repPenaltyViolation = "Violation penalty must be greater than 0"
+    }
+    
+    if (Number(repRewardGoodFlag) > Number(repPenaltyBadFlag)) {
+      newErrors.repRewardGoodFlag = "Good flag reward cannot exceed bad flag penalty"
+    }
+
+    setErrors(newErrors)
+    
+    if (Object.keys(newErrors).length > 0) return
 
     await execute(
       FORUM_ADDRESS,
@@ -147,13 +177,14 @@ export default function CreateCommunityPage() {
               </label>
               <Input
                 id="name"
+                maxLength={100}
                 placeholder="e.g. Protocol Research"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={isLocked}
-                className="bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary h-12 text-white"
-                required
+                className={`bg-[#0D091B] ${errors.description ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
               />
+              {errors.description && <p className="text-red-500 text-xs font-semibold mt-1">{errors.description}</p>}
             </div>
             
             <div className="space-y-2">
@@ -162,13 +193,14 @@ export default function CreateCommunityPage() {
               </label>
               <Input
                 id="description"
+                maxLength={2000}
                 placeholder="What is this hub about?"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={isLocked}
-                className="bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary h-12 text-white"
-                required
+                className={`bg-[#0D091B] ${errors.name ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
               />
+              {errors.name && <p className="text-red-500 text-xs font-semibold mt-1">{errors.name}</p>}
             </div>
 
             <div className="space-y-2">
@@ -177,13 +209,14 @@ export default function CreateCommunityPage() {
               </label>
               <Textarea
                 id="rules"
+                maxLength={5000}
                 placeholder="State the rules clearly. E.g. 'No spam. Be respectful. Keep it related to GenLayer.'"
                 value={rules}
                 onChange={(e) => setRules(e.target.value)}
                 disabled={isLocked}
-                className="min-h-[160px] bg-[#0D091B] border-[#291F4A] focus-visible:ring-primary resize-none text-white leading-relaxed p-4"
-                required
+                className={`min-h-[160px] bg-[#0D091B] ${errors.rules ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary resize-none text-white leading-relaxed p-4`}
               />
+              {errors.rules && <p className="text-red-500 text-xs font-semibold mt-1">{errors.rules}</p>}
             </div>
           </div>
 
@@ -206,8 +239,9 @@ export default function CreateCommunityPage() {
                       value={startingRep}
                       onChange={(e) => setStartingRep(e.target.value)}
                       disabled={isLocked}
-                      className="bg-[#130E26] border-[#291F4A] text-white"
+                      className={`bg-[#130E26] ${errors.startingRep ? 'border-red-500' : 'border-[#291F4A]'} text-white`}
                     />
+                    {errors.startingRep && <p className="text-red-500 text-xs font-semibold mt-1">{errors.startingRep}</p>}
                   </div>
                   
                   <div className="space-y-2">
@@ -220,8 +254,9 @@ export default function CreateCommunityPage() {
                       value={minRepToPost}
                       onChange={(e) => setMinRepToPost(e.target.value)}
                       disabled={isLocked}
-                      className="bg-[#130E26] border-[#291F4A] text-white"
+                      className={`bg-[#130E26] ${errors.minRepToPost ? 'border-red-500' : 'border-[#291F4A]'} text-white`}
                     />
+                    {errors.minRepToPost && <p className="text-red-500 text-xs font-semibold mt-1">{errors.minRepToPost}</p>}
                   </div>
                   
                   <div className="space-y-2">
@@ -234,8 +269,9 @@ export default function CreateCommunityPage() {
                       value={repPenaltyViolation}
                       onChange={(e) => setRepPenaltyViolation(e.target.value)}
                       disabled={isLocked}
-                      className="bg-[#130E26] border-[#291F4A] text-white"
+                      className={`bg-[#130E26] ${errors.repPenaltyViolation ? 'border-red-500' : 'border-[#291F4A]'} text-white`}
                     />
+                    {errors.repPenaltyViolation && <p className="text-red-500 text-xs font-semibold mt-1">{errors.repPenaltyViolation}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -248,8 +284,9 @@ export default function CreateCommunityPage() {
                       value={repPenaltyBadFlag}
                       onChange={(e) => setRepPenaltyBadFlag(e.target.value)}
                       disabled={isLocked}
-                      className="bg-[#130E26] border-[#291F4A] text-white"
+                      className={`bg-[#130E26] ${errors.repPenaltyBadFlag ? 'border-red-500' : 'border-[#291F4A]'} text-white`}
                     />
+                    {errors.repPenaltyBadFlag && <p className="text-red-500 text-xs font-semibold mt-1">{errors.repPenaltyBadFlag}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -262,8 +299,9 @@ export default function CreateCommunityPage() {
                       value={repRewardGoodFlag}
                       onChange={(e) => setRepRewardGoodFlag(e.target.value)}
                       disabled={isLocked}
-                      className="bg-[#130E26] border-[#291F4A] text-white"
+                      className={`bg-[#130E26] ${errors.repRewardGoodFlag ? 'border-red-500' : 'border-[#291F4A]'} text-white`}
                     />
+                    {errors.repRewardGoodFlag && <p className="text-red-500 text-xs font-semibold mt-1">{errors.repRewardGoodFlag}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -277,10 +315,10 @@ export default function CreateCommunityPage() {
                         value={appealWindow}
                         onChange={(e) => setAppealWindow(e.target.value)}
                         disabled={isLocked}
-                        className="bg-[#130E26] border-[#291F4A] text-white flex-1"
+                        className={`bg-[#130E26] ${errors.appealWindow ? 'border-red-500' : 'border-[#291F4A]'} text-white flex-1`}
                       />
                       <Select value={appealWindowUnit} onValueChange={(val) => setAppealWindowUnit(val || 'hours')} disabled={isLocked}>
-                        <SelectTrigger className="w-[120px] bg-[#130E26] border-[#291F4A] text-white">
+                        <SelectTrigger className={`w-[120px] bg-[#130E26] ${errors.appealWindow ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1C1635] border-[#291F4A] text-white">
@@ -291,6 +329,7 @@ export default function CreateCommunityPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {errors.appealWindow && <p className="text-red-500 text-xs font-semibold mt-1">{errors.appealWindow}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -304,10 +343,10 @@ export default function CreateCommunityPage() {
                         value={flagCooldown}
                         onChange={(e) => setFlagCooldown(e.target.value)}
                         disabled={isLocked}
-                        className="bg-[#130E26] border-[#291F4A] text-white flex-1"
+                        className={`bg-[#130E26] ${errors.flagCooldown ? 'border-red-500' : 'border-[#291F4A]'} text-white flex-1`}
                       />
                       <Select value={flagCooldownUnit} onValueChange={(val) => setFlagCooldownUnit(val || 'hours')} disabled={isLocked}>
-                        <SelectTrigger className="w-[120px] bg-[#130E26] border-[#291F4A] text-white">
+                        <SelectTrigger className={`w-[120px] bg-[#130E26] ${errors.flagCooldown ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1C1635] border-[#291F4A] text-white">
@@ -318,6 +357,7 @@ export default function CreateCommunityPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {errors.flagCooldown && <p className="text-red-500 text-xs font-semibold mt-1">{errors.flagCooldown}</p>}
                   </div>
                 </div>
 

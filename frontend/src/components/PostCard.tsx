@@ -20,6 +20,7 @@ interface Post {
   flag_count?: number;
   id: number;
   community_id: number;
+  flag_cooldown_seconds?: number;
   community_name?: string;
   author: string;
   content: string;
@@ -45,7 +46,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
   const { execute, isLocked } = useTransaction()
   const { fetchApi } = useApi()
 
-  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post.community_id)
+  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post.community_id, post.flag_cooldown_seconds)
   
   // React to Hydration
   const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000)
@@ -88,7 +89,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
   const handleFlagClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!mounted || !isConnected) return alert("Please connect your wallet to flag.");
+    if (!mounted || !isConnected) return toast.error("Please connect your wallet to flag.");
     
     await execute(
       FORUM_ADDRESS,
@@ -227,7 +228,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
           </CardHeader>
           
           <CardContent className="flex-grow">
-            <p className="text-foreground leading-relaxed whitespace-pre-wrap line-clamp-4">
+            <p className="text-foreground leading-relaxed whitespace-pre-wrap break-words line-clamp-4 overflow-hidden">
               {post.content}
             </p>
           </CardContent>

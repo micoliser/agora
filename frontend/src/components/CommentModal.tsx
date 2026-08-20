@@ -33,7 +33,7 @@ export function CommentModal({ open, onOpenChange, postId, postAuthor, postConte
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!content) return
+    if (!content || content.length > 2000) return
 
     await execute(
       FORUM_ADDRESS,
@@ -93,13 +93,17 @@ export function CommentModal({ open, onOpenChange, postId, postAuthor, postConte
               onChange={(e) => setContent(e.target.value)}
               disabled={isLocked}
               className="min-h-[120px] bg-surface/50 border-border/50 focus-visible:ring-primary resize-none"
+              maxLength={2000}
             />
+            <div className={`text-xs text-right mt-1 ${content.length >= 2000 ? "text-destructive font-bold" : "text-muted-foreground"}`}>
+              {content.length} / 2000
+            </div>
           </div>
 
           <Button 
             type="submit" 
             className="w-full h-11 font-semibold rounded-full" 
-            disabled={isLocked || !content}
+            disabled={isLocked || !content || content.length > 2000}
           >
             {isLocked ? (
               <>
