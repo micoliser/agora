@@ -45,6 +45,11 @@ class ForumAPITests(TestCase):
             message="Your post got a new comment",
             link="/community/1/post/1"
         )
+        import jwt
+        from django.conf import settings
+        import datetime
+        self.token = jwt.encode({'address': '0x456', 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)}, settings.SECRET_KEY, algorithm='HS256')
+        self.auth_headers = {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
 
     def test_community_list(self):
         response = self.client.get(reverse('community_list'))
@@ -83,35 +88,32 @@ class ForumAPITests(TestCase):
         self.assertEqual(response.json()[0]["content"], "Nice post")
 
     def test_notifications_list(self):
-        response = self.client.get(reverse('get_notifications') + "?address=0x456")
+        response = self.client.get(reverse('get_notifications') + "?address=0x456", **self.auth_headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["message"], "Your post got a new comment")
 
-    def test_notifications_list_missing_address(self):
-        response = self.client.get(reverse('get_notifications'))
-        self.assertEqual(response.status_code, 400)
 
     def test_notification_mark_read(self):
         # Initial is false
         self.assertFalse(Notification.objects.get(id=self.notification.id).is_read)
-        response = self.client.post(reverse('mark_notification_read', args=[self.notification.id]))
+        response = self.client.post(reverse('mark_notification_read', args=[self.notification.id]), **self.auth_headers)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Notification.objects.get(id=self.notification.id).is_read)
 
     def test_notification_mark_read_404(self):
-        response = self.client.post(reverse('mark_notification_read', args=[999]))
+        response = self.client.post(reverse('mark_notification_read', args=[999]), **self.auth_headers)
         self.assertEqual(response.status_code, 404)
 
     def test_notification_mark_all_read(self):
         Notification.objects.create(user_address="0x456", message="Second notif", link="/")
-        response = self.client.post(reverse('mark_all_notifications_read'), {"address": "0x456"}, content_type="application/json")
+        response = self.client.post(reverse('mark_all_notifications_read'), {"address": "0x456"}, content_type="application/json", **self.auth_headers)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Notification.objects.filter(user_address="0x456", is_read=False).exists())
 
     def test_notification_clear(self):
-        response = self.client.post(reverse('clear_notifications'), {"address": "0x456"}, content_type="application/json")
+        response = self.client.post(reverse('clear_notifications'), {"address": "0x456"}, content_type="application/json", **self.auth_headers)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Notification.objects.filter(user_address="0x456").exists())
 

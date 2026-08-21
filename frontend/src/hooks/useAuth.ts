@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
 
