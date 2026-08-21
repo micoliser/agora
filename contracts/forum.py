@@ -44,6 +44,7 @@ class Post:
     created_at: u256
     flagged_at: u256
     successful_flagger: Address
+    author_penalty_deducted: u256
 
 @allow_storage
 @dataclass
@@ -61,6 +62,7 @@ class Comment:
     created_at: u256
     flagged_at: u256
     successful_flagger: Address
+    author_penalty_deducted: u256
 
 class Forum(gl.Contract):
     communities: TreeMap[u256, Community]
@@ -239,7 +241,8 @@ class Forum(gl.Contract):
             appeal_deadline=u256(0),
             created_at=self._tx_timestamp(),
             flagged_at=u256(0),
-            successful_flagger=Address("0x0000000000000000000000000000000000000000")
+            successful_flagger=Address("0x0000000000000000000000000000000000000000"),
+            author_penalty_deducted=u256(0)
         )
         self.post_count += 1
         
@@ -278,7 +281,8 @@ class Forum(gl.Contract):
             appeal_deadline=u256(0),
             created_at=self._tx_timestamp(),
             flagged_at=u256(0),
-            successful_flagger=Address("0x0000000000000000000000000000000000000000")
+            successful_flagger=Address("0x0000000000000000000000000000000000000000"),
+            author_penalty_deducted=u256(0)
         )
         self.comment_count += 1
         
@@ -368,12 +372,15 @@ POST CONTENT:
         raw_result = gl.eq_principle.prompt_non_comparative(moderation_task, task="Evaluate constitution violation", criteria=criteria)
         
         # Strip markdown formatting if any
-        if raw_result.startswith("```json"):
-            raw_result = raw_result[7:-3]
-        elif raw_result.startswith("```"):
-            raw_result = raw_result[3:-3]
+        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+        
+        try:
+            result_data = json.loads(raw_result)
+            if not isinstance(result_data, dict):
+                raise ValueError("LLM returned non-dict JSON")
+        except Exception as e:
+            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        result_data = json.loads(raw_result)
         is_violation = result_data.get("is_violation", False)
         reason = result_data.get("reason", "")
 
@@ -390,8 +397,10 @@ POST CONTENT:
             penalty = community.reputation_penalty_violation
             if current_rep > penalty:
                 self.reputation[rep_key] = current_rep - penalty
+                post.author_penalty_deducted = penalty
             else:
                 self.reputation[rep_key] = u256(0)
+                post.author_penalty_deducted = current_rep
 
             # Reward flagger for good flag
             flagger_rep_key = f"{post.community_id}:{flagger.as_hex}"
@@ -476,12 +485,15 @@ POST CONTENT:
 """
         raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate constitution violation appeal", criteria=criteria)
         
-        if raw_result.startswith("```json"):
-            raw_result = raw_result[7:-3]
-        elif raw_result.startswith("```"):
-            raw_result = raw_result[3:-3]
+        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+        
+        try:
+            result_data = json.loads(raw_result)
+            if not isinstance(result_data, dict):
+                raise ValueError("LLM returned non-dict JSON")
+        except Exception as e:
+            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        result_data = json.loads(raw_result)
         is_violation = result_data.get("is_violation", False)
         reason = result_data.get("reason", "")
             
@@ -494,7 +506,7 @@ POST CONTENT:
             # Reverse author penalty
             rep_key = f"{post.community_id}:{post.author.as_hex}"
             current_rep = self.reputation.get(rep_key, u256(0))
-            self.reputation[rep_key] = current_rep + community.reputation_penalty_violation
+            self.reputation[rep_key] = current_rep + post.author_penalty_deducted
 
             # Reverse flagger reward (NO ADDITIONAL PENALTY)
             if post.successful_flagger != Address("0x0000000000000000000000000000000000000000"):
@@ -592,12 +604,15 @@ COMMENT CONTENT:
 """
         raw_result = gl.eq_principle.prompt_non_comparative(moderation_task, task="Evaluate comment violation", criteria=criteria)
         
-        if raw_result.startswith("```json"):
-            raw_result = raw_result[7:-3]
-        elif raw_result.startswith("```"):
-            raw_result = raw_result[3:-3]
+        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+        
+        try:
+            result_data = json.loads(raw_result)
+            if not isinstance(result_data, dict):
+                raise ValueError("LLM returned non-dict JSON")
+        except Exception as e:
+            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        result_data = json.loads(raw_result)
         is_violation = result_data.get("is_violation", False)
         reason = result_data.get("reason", "")
 
@@ -613,8 +628,10 @@ COMMENT CONTENT:
             penalty = community.reputation_penalty_violation
             if current_rep > penalty:
                 self.reputation[rep_key] = current_rep - penalty
+                comment.author_penalty_deducted = penalty
             else:
                 self.reputation[rep_key] = u256(0)
+                comment.author_penalty_deducted = current_rep
 
             # Reward flagger for good flag
             flagger_rep_key = f"{comment.community_id}:{flagger.as_hex}"
@@ -706,12 +723,15 @@ COMMENT CONTENT:
 """
         raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate comment violation appeal", criteria=criteria)
         
-        if raw_result.startswith("```json"):
-            raw_result = raw_result[7:-3]
-        elif raw_result.startswith("```"):
-            raw_result = raw_result[3:-3]
+        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+        
+        try:
+            result_data = json.loads(raw_result)
+            if not isinstance(result_data, dict):
+                raise ValueError("LLM returned non-dict JSON")
+        except Exception as e:
+            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        result_data = json.loads(raw_result)
         is_violation = result_data.get("is_violation", False)
         reason = result_data.get("reason", "")
             
@@ -721,7 +741,7 @@ COMMENT CONTENT:
             comment.status = STATUS_RESTORED
             rep_key = f"{comment.community_id}:{comment.author.as_hex}"
             current_rep = self.reputation.get(rep_key, u256(0))
-            self.reputation[rep_key] = current_rep + community.reputation_penalty_violation
+            self.reputation[rep_key] = current_rep + comment.author_penalty_deducted
 
             # Reverse flagger reward (NO ADDITIONAL PENALTY)
             if comment.successful_flagger != Address("0x0000000000000000000000000000000000000000"):
