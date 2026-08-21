@@ -233,8 +233,8 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
             </p>
           </CardContent>
 
-          <CardFooter className="pt-4 border-t border-[#291F4A] flex-none flex justify-between items-center bg-black/10">
-            <div className="flex items-center gap-2 z-20">
+          <CardFooter className="pt-4 border-t border-[#291F4A] flex-none flex flex-wrap justify-between items-center gap-4 bg-black/10">
+            <div className="flex flex-wrap items-center gap-2 z-20">
               {!isHidden && (
                 <Button 
                   variant="ghost" 

@@ -34,7 +34,7 @@ class RateLimitMiddleware:
                     limit = max_requests
                     break
                     
-            ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+            ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
             # Use the matched limit in the cache key to isolate limits per path prefix if needed?
             # Actually, standard rate limiting uses the same key for the endpoint or group. 
             # We will use the request path's generic matched pattern or just the raw path.

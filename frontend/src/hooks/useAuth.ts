@@ -64,7 +64,17 @@ export function useAuth() {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (token) {
+      try {
+        await fetch('http://localhost:8000/api/auth/logout/', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (e) {
+        console.error("Logout request failed:", e);
+      }
+    }
     localStorage.removeItem('jwt');
     setToken(null);
   };

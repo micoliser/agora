@@ -1,5 +1,7 @@
 
 import time
+import logging
+logger = logging.getLogger(__name__)
 import jwt
 import uuid
 import datetime
@@ -69,8 +71,8 @@ def serialize_comment(c):
 
 def get_pagination(request):
     try:
-        limit = int(request.GET.get('limit', 20))
-        offset = int(request.GET.get('offset', 0))
+        limit = min(int(request.GET.get('limit', 20)), 100)
+        offset = max(int(request.GET.get('offset', 0)), 0)
     except ValueError:
         limit = 20
         offset = 0
@@ -100,7 +102,7 @@ def post_detail(request, post_id):
     return JsonResponse(serialize_post(p))
 
 def post_comments(request, post_id):
-    comments = Comment.objects.filter(post_id=post_id, status__in=[0, 2]).order_by("created_at")
+    comments = Comment.objects.filter(post_id=post_id, status__in=[0, 2]).select_related('community').order_by("created_at")
     return JsonResponse([serialize_comment(c) for c in comments], safe=False)
 
 from .tasks import sync_entity, async_sync_entity, call_read_contract
@@ -114,12 +116,34 @@ def jwt_required(func):
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
             request.user_address = payload.get('address')
+            jti = payload.get('jti')
+            if jti and cache.get(f'jwt_blocklist_{jti}'):
+                return JsonResponse({'error': 'Token revoked'}, status=401)
         except jwt.ExpiredSignatureError:
             return JsonResponse({'error': 'Token expired'}, status=401)
         except jwt.InvalidTokenError:
             return JsonResponse({'error': 'Invalid token'}, status=401)
         return func(request, *args, **kwargs)
     return wrapper
+
+@csrf_exempt
+@csrf_exempt
+@jwt_required
+def auth_logout(request):
+    if request.method == 'POST':
+        token = request.headers.get('Authorization', '').split(' ')[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+            jti = payload.get('jti')
+            exp = payload.get('exp')
+            if jti and exp:
+                ttl = max(int(exp - datetime.datetime.utcnow().timestamp()), 0)
+                cache.set(f"jwt_blocklist_{jti}", True, ttl)
+            return JsonResponse({'success': True})
+        except Exception:
+            pass
+        return JsonResponse({'success': True})
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @csrf_exempt
 def auth_nonce(request):
@@ -160,16 +184,19 @@ def auth_verify(request):
             # Issue JWT
             payload = {
                 'address': address,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
+                    'jti': str(uuid.uuid4())
             }
             token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
             return JsonResponse({'token': token})
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
+            logger.exception('Unexpected error in auth_verify')
+            return JsonResponse({'error': 'An unexpected error occurred'}, status=400)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 @csrf_exempt
+@jwt_required
 def sync_request(request):
     if request.method == "POST":
         try:
@@ -181,81 +208,87 @@ def sync_request(request):
                     entity_type = data.get("entity_type")
                     entity_id = data.get("entity_id")
                     current_state = data.get("current_state", None)
-                    print("SYNC REQUEST DATA:", data)
+                    logger.debug("Sync request: entity_type=%s entity_id=%s", entity_type, entity_id)
+                    
                     if entity_type and entity_id is not None:
+                        # For polling: check if it's already updated in DB
                         if current_state:
-                            from .tasks import sync_entity
-                            success = sync_entity(entity_type, entity_id, current_state)
-                            return JsonResponse({"status": "synced" if success else "failed"})
-                        else:
-                            async_sync_entity.delay(entity_type, entity_id, current_state)
-                            return JsonResponse({"status": "queued"})
+                            from .models import Post, Comment, Community
+                            model_map = {'post': Post, 'comment': Comment, 'community': Community}
+                            model = model_map.get(entity_type)
+                            if model:
+                                obj = model.objects.filter(id=entity_id).first()
+                                if obj and getattr(obj, 'status', None) != current_state.get('status'):
+                                    return JsonResponse({"status": "synced"})
+
+                        async_sync_entity.delay(entity_type, entity_id, current_state)
+                        return JsonResponse({"status": "queued"})
                 except json.JSONDecodeError:
                     pass
             return JsonResponse({"error": "Invalid request or missing entity_type/entity_id"}, status=400)
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
+            logger.exception("Unexpected error in sync_request")
+            return JsonResponse({"error": "An unexpected error occurred"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
+@jwt_required
 def latest_community(request):
     if request.method == "POST":
         try:
             db_max = Community.objects.order_by('-id').first()
             expected_min_count = (db_max.id + 2) if db_max else 1
             
-            # Retry loop up to 5 times (total 5s wait)
-            for _ in range(15):
-                count = call_read_contract("get_community_count", [])
-                if count is not None and int(count) >= expected_min_count:
-                    latest_id = int(count) - 1
-                    if sync_entity("community", latest_id):
-                        return JsonResponse({"community_id": latest_id})
-                time.sleep(2)
-
-            return JsonResponse({"error": "Failed to sync community - block state not updated"}, status=500)
+            count = call_read_contract("get_community_count", [])
+            if count is not None and int(count) >= expected_min_count:
+                latest_id = int(count) - 1
+                if sync_entity("community", latest_id):
+                    return JsonResponse({"community_id": latest_id})
+            
+            return JsonResponse({"status": "pending"})
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
+            logger.exception("Unexpected error in latest_community")
+            return JsonResponse({"error": "An unexpected error occurred"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
+@jwt_required
 def latest_post(request):
     if request.method == "POST":
         try:
             db_max = Post.objects.order_by('-id').first()
             expected_min_count = (db_max.id + 2) if db_max else 1
 
-            for _ in range(15):
-                count = call_read_contract("get_post_count", [])
-                if count is not None and int(count) >= expected_min_count:
-                    latest_id = int(count) - 1
-                    if sync_entity("post", latest_id):
-                        return JsonResponse({"post_id": latest_id})
-                time.sleep(2)
+            count = call_read_contract("get_post_count", [])
+            if count is not None and int(count) >= expected_min_count:
+                latest_id = int(count) - 1
+                if sync_entity("post", latest_id):
+                    return JsonResponse({"post_id": latest_id})
 
-            return JsonResponse({"error": "Failed to sync post - block state not updated"}, status=500)
+            return JsonResponse({"status": "pending"})
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
+            logger.exception("Unexpected error in latest_post")
+            return JsonResponse({"error": "An unexpected error occurred"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
+@jwt_required
 def latest_comment(request):
     if request.method == "POST":
         try:
             db_max = Comment.objects.order_by('-id').first()
             expected_min_count = (db_max.id + 2) if db_max else 1
 
-            for _ in range(15):
-                count = call_read_contract("get_comment_count", [])
-                if count is not None and int(count) >= expected_min_count:
-                    latest_id = int(count) - 1
-                    if sync_entity("comment", latest_id):
-                        return JsonResponse({"comment_id": latest_id})
-                time.sleep(2)
+            count = call_read_contract("get_comment_count", [])
+            if count is not None and int(count) >= expected_min_count:
+                latest_id = int(count) - 1
+                if sync_entity("comment", latest_id):
+                    return JsonResponse({"comment_id": latest_id})
 
-            return JsonResponse({"error": "Failed to sync comment - block state not updated"}, status=500)
+            return JsonResponse({"status": "pending"})
         except Exception as e:
-            import traceback; traceback.print_exc(); return JsonResponse({"error": "Internal Server Error"}, status=500)
+            logger.exception("Unexpected error in latest_comment")
+            return JsonResponse({"error": "An unexpected error occurred"}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt

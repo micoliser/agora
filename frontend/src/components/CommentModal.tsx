@@ -44,14 +44,22 @@ export function CommentModal({ open, onOpenChange, postId, postAuthor, postConte
         submittedMessage: 'Validating comment with GenVM...',
         confirmedMessage: 'Comment added successfully!',
         onConfirmed: async () => {
-          try {
-            await fetchApi("/api/indexer/latest-comment/", { method: "POST" })
-          } catch (e) {
-            console.error("Failed to sync latest comment", e)
+          let attempts = 0;
+          while (attempts < 15) {
+            try {
+              const res = await fetchApi("/api/indexer/latest-comment/", { method: "POST" });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.comment_id !== undefined) break;
+              }
+            } catch (e) {
+              console.warn("Failed to sync latest comment", e);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
           }
-          onOpenChange(false)
-          setContent('')
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          onOpenChange(false);
+          setContent('');
           if (onCommentAdded) {
             onCommentAdded();
           }

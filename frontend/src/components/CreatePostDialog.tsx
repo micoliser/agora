@@ -43,14 +43,22 @@ export function CreatePostDialog({ communityId, disabled }: CreatePostDialogProp
         submittedMessage: 'Validating with GenVM...',
         confirmedMessage: 'Post published successfully!',
         onConfirmed: async () => {
-          try {
-            await fetchApi("/api/indexer/latest-post/", { method: "POST" })
-          } catch (e) {
-            console.error("Failed to sync latest post", e)
+          let attempts = 0;
+          while (attempts < 15) {
+            try {
+              const res = await fetchApi("/api/indexer/latest-post/", { method: "POST" });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.post_id !== undefined) break;
+              }
+            } catch (e) {
+              console.warn("Failed to sync latest post", e);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
           }
-          setOpen(false)
-          setContent('')
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          setOpen(false);
+          setContent('');
           window.location.reload()
         }
       }

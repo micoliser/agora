@@ -115,7 +115,7 @@ export function NotificationDropdown() {
   if (!mounted || !address) return (
       <button 
         disabled
-        className="hidden sm:flex relative items-center justify-center w-10 h-10 rounded-full bg-[#130E26] border border-border transition-colors text-muted-foreground opacity-50"
+        className="flex relative items-center justify-center w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#130E26] border border-border transition-colors text-muted-foreground opacity-50"
       >
         <Bell className="w-4 h-4" />
       </button>
@@ -125,7 +125,7 @@ export function NotificationDropdown() {
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="hidden sm:flex relative items-center justify-center w-10 h-10 rounded-full bg-[#130E26] border border-border hover:bg-[#1C1635] transition-colors text-muted-foreground"
+        className="flex relative items-center justify-center w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#130E26] border border-border hover:bg-[#1C1635] transition-colors text-muted-foreground"
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
@@ -134,7 +134,7 @@ export function NotificationDropdown() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-[#130E26] border border-[#291F4A] rounded-xl shadow-2xl overflow-hidden z-50">
+        <div className="absolute right-[-3.5rem] sm:right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 bg-[#130E26] border border-[#291F4A] rounded-xl shadow-2xl overflow-hidden z-50">
           <div className="p-3 border-b border-[#291F4A] bg-[#1C1635] flex justify-between items-center">
             <h3 className="font-bold text-white">Notifications</h3>
             {notifications.length > 0 && (

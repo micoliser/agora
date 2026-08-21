@@ -13,7 +13,7 @@ from .models import (
 )
 
 from eth_account import Account
-import bleach
+import nh3
 from genlayer_py import create_client
 from genlayer_py.chains import studionet
 
@@ -78,9 +78,9 @@ def _sync_single_community(community_id: int) -> bool:
             id=community_id,
             defaults={
                 "admin": com_data.get("admin", ""),
-                "name": com_data.get("name", ""),
-                "description": com_data.get("description", ""),
-                "constitution": com_data.get("constitution", ""),
+                "name": nh3.clean(com_data.get("name", "")),
+                "description": nh3.clean(com_data.get("description", "")),
+                "constitution": nh3.clean(com_data.get("constitution", "")),
                 "appeal_window_seconds": com_data.get("appeal_window_seconds", 0),
                 "min_reputation_to_post": com_data.get("min_reputation_to_post", 0),
                 "starting_reputation": com_data.get("starting_reputation", 0),
@@ -178,7 +178,7 @@ def _sync_single_post(post_id: int, current_state=None) -> bool:
                     defaults={
                         "community": community,
                         "author": author,
-                        "content": bleach.clean(p_data.get("content", "")),
+                        "content": nh3.clean(p_data.get("content", "")),
                         "status": new_status,
                         "flag_count": p_data.get("flag_count", 0),
                         "moderation_verdict": str(p_data.get("moderation_verdict", "")),
@@ -286,7 +286,7 @@ def _sync_single_comment(comment_id: int, current_state=None) -> bool:
                     "community": community,
                     "post": post,
                     "author": author,
-                    "content": bleach.clean(c_data.get("content", "")),
+                    "content": nh3.clean(c_data.get("content", "")),
                     "status": new_status,
                     "flag_count": c_data.get("flag_count", 0),
                     "moderation_verdict": str(c_data.get("moderation_verdict", "")),

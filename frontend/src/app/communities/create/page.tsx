@@ -135,12 +135,20 @@ export default function CreateCommunityPage() {
         submittedMessage: "Community created, waiting for confirmation...",
         confirmedMessage: "Community deployed successfully!",
         onConfirmed: async () => {
-          try {
-            await fetchApi("/api/indexer/latest-community/", { method: "POST" })
-          } catch (e) {
-            console.error("Failed to sync latest community", e)
+          let attempts = 0;
+          while (attempts < 15) {
+            try {
+              const res = await fetchApi("/api/indexer/latest-community/", { method: "POST" });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.community_id !== undefined) break;
+              }
+            } catch (e) {
+              console.warn("Failed to sync latest community", e);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
           }
-          await new Promise(resolve => setTimeout(resolve, 2000));
           router.push('/communities')
         }
       }
@@ -309,7 +317,7 @@ export default function CreateCommunityPage() {
                       label="Appeal Window" 
                       tooltip="The duration during which a penalized user can appeal the AI's moderation decision." 
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Input
                         type="number"
                         value={appealWindow}
@@ -318,7 +326,7 @@ export default function CreateCommunityPage() {
                         className={`bg-[#130E26] ${errors.appealWindow ? 'border-red-500' : 'border-[#291F4A]'} text-white flex-1`}
                       />
                       <Select value={appealWindowUnit} onValueChange={(val) => setAppealWindowUnit(val || 'hours')} disabled={isLocked}>
-                        <SelectTrigger className={`w-[120px] bg-[#130E26] ${errors.appealWindow ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
+                        <SelectTrigger className={`w-full sm:w-[120px] bg-[#130E26] ${errors.appealWindow ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1C1635] border-[#291F4A] text-white">
@@ -337,7 +345,7 @@ export default function CreateCommunityPage() {
                       label="Flag Cooldown" 
                       tooltip="The mandatory waiting period before a user can flag another post." 
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Input
                         type="number"
                         value={flagCooldown}
@@ -346,7 +354,7 @@ export default function CreateCommunityPage() {
                         className={`bg-[#130E26] ${errors.flagCooldown ? 'border-red-500' : 'border-[#291F4A]'} text-white flex-1`}
                       />
                       <Select value={flagCooldownUnit} onValueChange={(val) => setFlagCooldownUnit(val || 'hours')} disabled={isLocked}>
-                        <SelectTrigger className={`w-[120px] bg-[#130E26] ${errors.flagCooldown ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
+                        <SelectTrigger className={`w-full sm:w-[120px] bg-[#130E26] ${errors.flagCooldown ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent className="bg-[#1C1635] border-[#291F4A] text-white">

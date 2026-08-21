@@ -93,26 +93,36 @@ export function useTransaction() {
           
           let syncFailed = false;
           for (const req of opts.syncRequests) {
-            try {
-              const payload: Record<string, unknown> = {
-                entity_type: req.entityType,
-                entity_id: req.entityId,
-              };
-              if (req.currentState) payload.current_state = req.currentState;
-              
-              const res = await fetchApi("/api/indexer/sync-request/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-              });
-              
-              if (!res.ok) {
-                syncFailed = true;
+            let attempts = 0;
+            let success = false;
+            while (attempts < 15) {
+              try {
+                const payload: Record<string, unknown> = {
+                  entity_type: req.entityType,
+                  entity_id: req.entityId,
+                };
+                if (req.currentState) payload.current_state = req.currentState;
+                
+                const res = await fetchApi("/api/indexer/sync-request/", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                });
+                
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.status === "synced") {
+                    success = true;
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.warn("Failed to manually sync", req, e);
               }
-            } catch (e) {
-              console.warn("Failed to manually sync", req, e);
-              syncFailed = true;
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              attempts++;
             }
+            if (!success) syncFailed = true;
           }
 
           if (syncFailed) {
