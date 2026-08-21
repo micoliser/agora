@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useAccount } from 'wagmi';
 import { createClient } from 'genlayer-js';
-import { studionet, testnetBradbury } from 'genlayer-js/chains';
+import { studionet } from 'genlayer-js/chains';
 
 export function useGenLayerWrite() {
   const { address, isConnected } = useAccount();
@@ -38,7 +38,6 @@ export function useGenLayerWrite() {
         throw new Error("No wallet provider found. Please install MetaMask.");
       }
 
-      const isProd = process.env.NEXT_PUBLIC_GENLAYER_NETWORK === 'bradbury';
       const safeStudionet = studionet || {
         id: 61999,
         isStudio: true,
@@ -51,7 +50,7 @@ export function useGenLayerWrite() {
         nativeCurrency: { name: "GEN Token", symbol: "GEN", decimals: 18 }
       };
 
-      const chain = isProd ? testnetBradbury : safeStudionet;
+      const chain = safeStudionet;
 
       const client = createClient({
         chain,
@@ -59,7 +58,7 @@ export function useGenLayerWrite() {
         provider,
       });
 
-      await client.connect(isProd ? "testnetBradbury" : "studionet");
+      await client.connect("studionet");
 
       const txHash = await client.writeContract({
         address: contractAddress as `0x${string}`,
