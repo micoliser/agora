@@ -18,6 +18,7 @@ class Community:
     description: str
     constitution: str
     appeal_window_seconds: u256
+    min_flag_age_seconds: u256
     min_reputation_to_post: u256
     starting_reputation: u256
     reputation_penalty_violation: u256
@@ -74,6 +75,7 @@ class Forum(gl.Contract):
     reputation: TreeMap[str, u256]
     community_members: TreeMap[str, Address]
     last_flag_time: TreeMap[str, u256]
+    member_join_time: TreeMap[str, u256]
     
     community_count: u256
     post_count: u256
@@ -93,7 +95,8 @@ class Forum(gl.Contract):
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
         reputation_reward_good_flag: u256,
-        flag_cooldown_seconds: u256
+        flag_cooldown_seconds: u256,
+        min_flag_age_seconds: u256
     ):
         self.community_count = u256(0)
         self.post_count = u256(0)
@@ -111,7 +114,8 @@ class Forum(gl.Contract):
             reputation_penalty_violation,
             reputation_penalty_bad_flag,
             reputation_reward_good_flag,
-            flag_cooldown_seconds
+            flag_cooldown_seconds,
+            min_flag_age_seconds
         )
 
     def _parse_address(self, address) -> Address:
@@ -133,7 +137,8 @@ class Forum(gl.Contract):
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
         reputation_reward_good_flag: u256,
-        flag_cooldown_seconds: u256
+        flag_cooldown_seconds: u256,
+        min_flag_age_seconds: u256
     ) -> u256:
         if len(name) > 100:
             raise gl.vm.UserError("Name too long")
@@ -165,6 +170,7 @@ class Forum(gl.Contract):
             reputation_penalty_bad_flag=reputation_penalty_bad_flag,
             reputation_reward_good_flag=reputation_reward_good_flag,
             flag_cooldown_seconds=flag_cooldown_seconds,
+            min_flag_age_seconds=min_flag_age_seconds,
             post_count=u256(0),
             comment_count=u256(0),
             member_count=u256(0),
@@ -185,7 +191,8 @@ class Forum(gl.Contract):
         reputation_penalty_violation: u256,
         reputation_penalty_bad_flag: u256,
         reputation_reward_good_flag: u256,
-        flag_cooldown_seconds: u256
+        flag_cooldown_seconds: u256,
+        min_flag_age_seconds: u256
     ) -> u256:
         return self._create_community_internal(
             gl.message.sender_address,
@@ -198,7 +205,8 @@ class Forum(gl.Contract):
             reputation_penalty_violation,
             reputation_penalty_bad_flag,
             reputation_reward_good_flag,
-            flag_cooldown_seconds
+            flag_cooldown_seconds,
+            min_flag_age_seconds
         )
 
     def _ensure_member_reputation(self, community_id: u256, author: Address):
@@ -211,6 +219,9 @@ class Forum(gl.Contract):
             self.community_members[f"{community_id}:{idx}"] = author
             community.member_count += 1
             self.communities[community_id] = community
+            
+            # Record join time for min_flag_age sybil resistance
+            self.member_join_time[rep_key] = self._tx_timestamp()
             
         return self.reputation[rep_key]
 
@@ -316,6 +327,18 @@ class Forum(gl.Contract):
         if self._tx_timestamp() < last_flag + community.flag_cooldown_seconds:
             raise gl.vm.UserError("Flag cooldown active")
             
+        # Sybil resistance check: min flag age
+        rep_key = f"{community_id}:{flagger.as_hex}"
+        join_time = self.member_join_time.get(rep_key, u256(0))
+        if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
+            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
+            
+        # Sybil resistance check: min flag age
+        rep_key = f"{community_id}:{flagger.as_hex}"
+        join_time = self.member_join_time.get(rep_key, u256(0))
+        if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
+            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
+            
         self.last_flag_time[cooldown_key] = self._tx_timestamp()
         self.has_flagged_post[flag_key] = True
         post.flag_count += 1
@@ -381,7 +404,10 @@ POST CONTENT:
         except Exception as e:
             raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        is_violation = result_data.get("is_violation", False)
+        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
+            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
+            
+        is_violation = result_data["is_violation"]
         reason = result_data.get("reason", "")
 
         if is_violation:
@@ -420,7 +446,7 @@ POST CONTENT:
         return json.dumps({"is_violation": is_violation, "reason": reason})
 
     @gl.public.write
-    def appeal_post(self, post_id: u256) -> str:
+    def appeal_post(self, post_id: u256, defense: str = "") -> str:
         if post_id >= self.post_count:
             raise gl.vm.UserError("Post does not exist")
             
@@ -437,6 +463,9 @@ POST CONTENT:
             
         if self._tx_timestamp() > post.appeal_deadline:
             raise gl.vm.UserError("Appeal deadline has passed")
+        
+        if len(defense) > 2000:
+            raise gl.vm.UserError("Defense too long")
             
         post.appeal_used = True
         community = self.communities[post.community_id]
@@ -482,6 +511,9 @@ CONSTITUTION:
 
 POST CONTENT:
 {post_content}
+
+AUTHOR'S DEFENSE:
+{defense}
 """
         raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate constitution violation appeal", criteria=criteria)
         
@@ -494,7 +526,10 @@ POST CONTENT:
         except Exception as e:
             raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        is_violation = result_data.get("is_violation", False)
+        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
+            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
+            
+        is_violation = result_data["is_violation"]
         reason = result_data.get("reason", "")
             
         post.appeal_verdict = reason
@@ -548,6 +583,18 @@ POST CONTENT:
         community = self.communities[community_id]
         if self._tx_timestamp() < last_flag + community.flag_cooldown_seconds:
             raise gl.vm.UserError("Flag cooldown active")
+            
+        # Sybil resistance check: min flag age
+        rep_key = f"{community_id}:{flagger.as_hex}"
+        join_time = self.member_join_time.get(rep_key, u256(0))
+        if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
+            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
+            
+        # Sybil resistance check: min flag age
+        rep_key = f"{community_id}:{flagger.as_hex}"
+        join_time = self.member_join_time.get(rep_key, u256(0))
+        if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
+            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
             
         self.last_flag_time[cooldown_key] = self._tx_timestamp()
         self.has_flagged_comment[flag_key] = True
@@ -613,7 +660,10 @@ COMMENT CONTENT:
         except Exception as e:
             raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        is_violation = result_data.get("is_violation", False)
+        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
+            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
+            
+        is_violation = result_data["is_violation"]
         reason = result_data.get("reason", "")
 
         if is_violation:
@@ -650,7 +700,7 @@ COMMENT CONTENT:
         return json.dumps({"is_violation": is_violation, "reason": reason})
 
     @gl.public.write
-    def appeal_comment(self, comment_id: u256) -> str:
+    def appeal_comment(self, comment_id: u256, defense: str = "") -> str:
         if comment_id >= self.comment_count:
             raise gl.vm.UserError("Comment does not exist")
             
@@ -667,6 +717,9 @@ COMMENT CONTENT:
             
         if self._tx_timestamp() > comment.appeal_deadline:
             raise gl.vm.UserError("Appeal deadline has passed")
+            
+        if len(defense) > 2000:
+            raise gl.vm.UserError("Defense too long")
             
         comment.appeal_used = True
         community = self.communities[comment.community_id]
@@ -720,6 +773,9 @@ PARENT POST CONTEXT:
 
 COMMENT CONTENT:
 {comment_content}
+
+AUTHOR'S DEFENSE:
+{defense}
 """
         raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate comment violation appeal", criteria=criteria)
         
@@ -732,7 +788,10 @@ COMMENT CONTENT:
         except Exception as e:
             raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
             
-        is_violation = result_data.get("is_violation", False)
+        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
+            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
+            
+        is_violation = result_data["is_violation"]
         reason = result_data.get("reason", "")
             
         comment.appeal_verdict = reason
@@ -776,6 +835,7 @@ COMMENT CONTENT:
             "reputation_penalty_bad_flag": com.reputation_penalty_bad_flag,
             "reputation_reward_good_flag": com.reputation_reward_good_flag,
             "flag_cooldown_seconds": com.flag_cooldown_seconds,
+            "min_flag_age_seconds": com.min_flag_age_seconds,
             "post_count": com.post_count,
             "comment_count": com.comment_count,
             "member_count": com.member_count,
@@ -840,6 +900,12 @@ COMMENT CONTENT:
         address_obj = self._parse_address(address)
         cooldown_key = f"{community_id}:{address_obj.as_hex}"
         return self.last_flag_time.get(cooldown_key, u256(0))
+
+    @gl.public.view
+    def get_member_join_time(self, community_id: u256, address: str) -> u256:
+        address_obj = self._parse_address(address)
+        rep_key = f"{community_id}:{address_obj.as_hex}"
+        return self.member_join_time.get(rep_key, u256(0))
 
     @gl.public.view
     def get_reputation(self, community_id: u256, address: str) -> u256:

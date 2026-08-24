@@ -25,7 +25,12 @@ export function useApi() {
       headers
     };
 
-    return await fetch(url, fetchOptions);
+    const res = await fetch(url, fetchOptions);
+    if (res.status === 401) {
+      localStorage.removeItem('jwt');
+      window.dispatchEvent(new Event('unauthorized'));
+    }
+    return res;
   }, []);
 
   return { fetchApi };

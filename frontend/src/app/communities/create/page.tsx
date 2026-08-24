@@ -78,6 +78,9 @@ export default function CreateCommunityPage() {
   const [flagCooldown, setFlagCooldown] = useState('1')
   const [flagCooldownUnit, setFlagCooldownUnit] = useState('hours')
 
+  const [minFlagAge, setMinFlagAge] = useState('24')
+  const [minFlagAgeUnit, setMinFlagAgeUnit] = useState('hours')
+
   const { execute, isLocked } = useTransaction()
   const { fetchApi } = useApi()
 
@@ -101,6 +104,11 @@ export default function CreateCommunityPage() {
     const cooldownSecs = getSeconds(flagCooldown, flagCooldownUnit)
     if (cooldownSecs < 60 || cooldownSecs > 86400) {
       newErrors.flagCooldown = "Flag cooldown must be between 1 minute and 24 hours"
+    }
+    
+    const minFlagSecs = getSeconds(minFlagAge, minFlagAgeUnit)
+    if (minFlagSecs < 0 || minFlagSecs > 2592000) {
+      newErrors.minFlagAge = "Min flag age must be between 0 and 30 days"
     }
     
     if (Number(repPenaltyViolation) <= 0) {
@@ -128,7 +136,8 @@ export default function CreateCommunityPage() {
         BigInt(repPenaltyViolation),
         BigInt(repPenaltyBadFlag),
         BigInt(repRewardGoodFlag),
-        BigInt(getSeconds(flagCooldown, flagCooldownUnit))
+        BigInt(getSeconds(flagCooldown, flagCooldownUnit)),
+        BigInt(getSeconds(minFlagAge, minFlagAgeUnit))
       ],
       {
         confirmingMessage: "Please confirm community creation in your wallet...",
@@ -366,6 +375,34 @@ export default function CreateCommunityPage() {
                       </Select>
                     </div>
                     {errors.flagCooldown && <p className="text-red-500 text-xs font-semibold mt-1">{errors.flagCooldown}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <LabelWithTooltip 
+                      label="Min Flag Age" 
+                      tooltip="The mandatory account age required before a user can flag any post or comment." 
+                    />
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        type="number"
+                        value={minFlagAge}
+                        onChange={(e) => setMinFlagAge(e.target.value)}
+                        disabled={isLocked}
+                        className={`bg-[#130E26] ${errors.minFlagAge ? 'border-red-500' : 'border-[#291F4A]'} text-white flex-1`}
+                      />
+                      <Select value={minFlagAgeUnit} onValueChange={(val) => setMinFlagAgeUnit(val || 'hours')} disabled={isLocked}>
+                        <SelectTrigger className={`w-full sm:w-[120px] bg-[#130E26] ${errors.minFlagAge ? 'border-red-500' : 'border-[#291F4A]'} text-white`}>
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#1C1635] border-[#291F4A] text-white">
+                          <SelectItem value="seconds">Seconds</SelectItem>
+                          <SelectItem value="minutes">Minutes</SelectItem>
+                          <SelectItem value="hours">Hours</SelectItem>
+                          <SelectItem value="days">Days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {errors.minFlagAge && <p className="text-red-500 text-xs font-semibold mt-1">{errors.minFlagAge}</p>}
                   </div>
                 </div>
 

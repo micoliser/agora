@@ -40,13 +40,15 @@ interface PostCardProps {
 export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
   const [commentModalOpen, setCommentModalOpen] = useState(false)
   const [localCommentCount, setLocalCommentCount] = useState(post.comment_count || 0)
+  const [defenseText, setDefenseText] = useState('')
+  const [showAppealForm, setShowAppealForm] = useState(false)
   
   const { address, isConnected } = useAccount()
   const mounted = useMounted()
   const { execute, isLocked } = useTransaction()
   const { fetchApi } = useApi()
 
-  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post.community_id, post.flag_cooldown_seconds)
+  const { isCooldownActive, cooldownTimeRemaining, isSybilGated, sybilTimeRemaining, triggerCooldown } = useFlagCooldown(address, post.community_id, post.flag_cooldown_seconds)
   
   // React to Hydration
   const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000)
@@ -90,6 +92,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
     e.preventDefault();
     e.stopPropagation();
     if (!mounted || !isConnected) return toast.error("Please connect your wallet to flag.");
+    if (isSybilGated) return toast.error(`You cannot flag yet. ${sybilTimeRemaining}`);
     
     await execute(
       FORUM_ADDRESS,
@@ -123,7 +126,7 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
     await execute(
       FORUM_ADDRESS,
       'appeal_post',
-      [BigInt(post.id)],
+      [BigInt(post.id), defenseText],
       {
         confirmingMessage: 'Submitting appeal...',
         submittedMessage: 'GenVM is reviewing your appeal...',
@@ -172,19 +175,51 @@ export function PostCard({ post, showCommunityBadge = true }: PostCardProps) {
                 )}
 
                 {isRemoved && isAuthor && !post.appeal_used && (!post.appeal_deadline || currentTime < post.appeal_deadline) && (
-                  <div className="flex flex-col items-center gap-2 z-20 w-full max-w-xs mx-auto">
-                    <Button 
-                      variant="outline" 
-                      className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-11 text-base font-semibold shadow-[0_0_15px_rgba(var(--primary),0.3)]"
-                      onClick={handleAppealClick} 
-                      disabled={isLocked}
-                    >
-                      {isLocked ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <AlertTriangle className="w-5 h-5 mr-2" />}
-                      Appeal Decision
-                    </Button>
-                    <span className="text-sm font-medium transition-colors text-white/90">
-                      {post.appeal_deadline ? formatTimeRemaining(post.appeal_deadline) : ''}
-                    </span>
+                  <div className="flex flex-col items-center gap-2 z-20 w-full max-w-sm mx-auto">
+                    {!showAppealForm ? (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-11 text-base font-semibold shadow-[0_0_15px_rgba(var(--primary),0.3)]"
+                          onClick={() => setShowAppealForm(true)} 
+                          disabled={isLocked}
+                        >
+                          {isLocked ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <AlertTriangle className="w-5 h-5 mr-2" />}
+                          Appeal Decision
+                        </Button>
+                        <span className="text-sm font-medium transition-colors text-white/90">
+                          {post.appeal_deadline ? formatTimeRemaining(post.appeal_deadline) : ''}
+                        </span>
+                      </>
+                    ) : (
+                      <div className="w-full flex flex-col gap-2">
+                        <textarea
+                          placeholder="State your defense. Why does this post not violate the constitution?"
+                          className="w-full min-h-[100px] p-3 rounded-md bg-black/40 border border-primary/30 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none text-sm"
+                          value={defenseText}
+                          onChange={(e) => setDefenseText(e.target.value)}
+                          maxLength={2000}
+                        />
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="ghost" 
+                            className="flex-1 text-white/70 hover:text-white"
+                            onClick={() => setShowAppealForm(false)}
+                            disabled={isLocked}
+                          >
+                            Cancel
+                          </Button>
+                          <Button 
+                            className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                            onClick={handleAppealClick}
+                            disabled={isLocked || defenseText.trim().length === 0}
+                          >
+                            {isLocked ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            Submit Appeal
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

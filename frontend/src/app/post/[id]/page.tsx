@@ -66,7 +66,11 @@ export default function PostPage() {
   const [commentContent, setCommentContent] = useState("");
 
   const { execute, isLocked } = useTransaction();
-  const { isCooldownActive, cooldownTimeRemaining, triggerCooldown } = useFlagCooldown(address, post?.community_id, post?.flag_cooldown_seconds);
+  const { isCooldownActive, cooldownTimeRemaining, isSybilGated, sybilTimeRemaining, triggerCooldown } = useFlagCooldown(address, post?.community_id, post?.flag_cooldown_seconds);
+  const [postAppealDefense, setPostAppealDefense] = useState('');
+  const [showPostAppeal, setShowPostAppeal] = useState(false);
+  const [commentAppealId, setCommentAppealId] = useState<number | null>(null);
+  const [commentAppealDefense, setCommentAppealDefense] = useState('');
   
   const formatTimeRemaining = (deadline: number) => {
     const diff = deadline - currentTime;
@@ -142,6 +146,10 @@ export default function PostPage() {
 
   const handleFlagPost = async () => {
     if (!id || !mounted || !isConnected) return;
+    if (isSybilGated) {
+      toast.error(`You cannot flag yet. ${sybilTimeRemaining}`);
+      return;
+    }
     await execute(
       FORUM_ADDRESS,
       "flag_post",
@@ -171,7 +179,7 @@ export default function PostPage() {
     await execute(
       FORUM_ADDRESS,
       "appeal_post",
-      [BigInt(id as string)],
+      [BigInt(id as string), postAppealDefense],
       {
         confirmingMessage: "Submitting appeal...",
         submittedMessage: "GenVM is reviewing your appeal...",
@@ -194,6 +202,10 @@ export default function PostPage() {
 
   const handleFlagComment = async (commentId: number) => {
     if (!mounted || !isConnected) return;
+    if (isSybilGated) {
+      toast.error(`You cannot flag yet. ${sybilTimeRemaining}`);
+      return;
+    }
     await execute(
       FORUM_ADDRESS,
       "flag_comment",
@@ -227,7 +239,7 @@ export default function PostPage() {
     await execute(
       FORUM_ADDRESS,
       "appeal_comment",
-      [BigInt(commentId)],
+      [BigInt(commentId), commentAppealDefense],
       {
         confirmingMessage: "Submitting appeal...",
         submittedMessage: "GenVM is reviewing your appeal...",
@@ -297,22 +309,54 @@ export default function PostPage() {
             
             {!post.appeal_used && (
               <div className="flex flex-col items-center gap-2 z-30 w-full max-w-sm mx-auto mt-2">
-                <Button 
-                  variant="outline" 
-                  className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-12 text-lg font-bold shadow-[0_0_20px_rgba(var(--primary),0.4)]"
-                  onClick={handleAppealPost} 
-                  disabled={isLocked || (post.appeal_deadline ? currentTime >= post.appeal_deadline : false)}
-                >
-                  {isLocked ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <AlertTriangle className="w-5 h-5 mr-2" />}
-                  Appeal Decision
-                </Button>
-                <span className={`text-sm font-medium transition-colors ${
-                  post.appeal_deadline && currentTime >= post.appeal_deadline 
-                    ? 'text-red-500 bg-red-500/10 px-4 py-1.5 rounded-full' 
-                    : 'text-white/90'
-                }`}>
-                  {post.appeal_deadline ? (currentTime < post.appeal_deadline ? formatTimeRemaining(post.appeal_deadline) : 'Expired') : ''}
-                </span>
+                {!showPostAppeal ? (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-12 text-lg font-bold shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+                      onClick={() => setShowPostAppeal(true)} 
+                      disabled={isLocked || (post.appeal_deadline ? currentTime >= post.appeal_deadline : false)}
+                    >
+                      {isLocked ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <AlertTriangle className="w-5 h-5 mr-2" />}
+                      Appeal Decision
+                    </Button>
+                    <span className={`text-sm font-medium transition-colors ${
+                      post.appeal_deadline && currentTime >= post.appeal_deadline 
+                        ? 'text-red-500 bg-red-500/10 px-4 py-1.5 rounded-full' 
+                        : 'text-white/90'
+                    }`}>
+                      {post.appeal_deadline ? (currentTime < post.appeal_deadline ? formatTimeRemaining(post.appeal_deadline) : 'Expired') : ''}
+                    </span>
+                  </>
+                ) : (
+                  <div className="w-full flex flex-col gap-2">
+                    <textarea
+                      placeholder="State your defense. Why does this post not violate the constitution?"
+                      className="w-full min-h-[100px] p-3 rounded-md bg-black/40 border border-primary/30 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none text-sm"
+                      value={postAppealDefense}
+                      onChange={(e) => setPostAppealDefense(e.target.value)}
+                      maxLength={2000}
+                    />
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="ghost" 
+                        className="flex-1 text-white/70 hover:text-white"
+                        onClick={() => setShowPostAppeal(false)}
+                        disabled={isLocked}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                        onClick={handleAppealPost}
+                        disabled={isLocked || postAppealDefense.trim().length === 0}
+                      >
+                        {isLocked ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                        Submit Appeal
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {post.appeal_used && (
@@ -473,23 +517,56 @@ export default function PostPage() {
                       </p>
                       
                       {!comment.appeal_used && (
-                        <div className="flex flex-col items-center gap-2 z-30 w-full max-w-[200px] mx-auto mt-2">
-                          <Button 
-                            variant="outline" size="sm"
-                            className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-9 text-sm font-semibold shadow-[0_0_10px_rgba(var(--primary),0.3)]"
-                            onClick={() => handleAppealComment(comment.id)} 
-                            disabled={isLocked || currentTime >= comment.appeal_deadline}
-                          >
-                            {isLocked ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
-                            Appeal Decision
-                          </Button>
-                          <span className={`text-[11px] font-medium transition-colors ${
-                            currentTime >= comment.appeal_deadline 
-                              ? 'text-red-500 bg-red-500/10 px-3 py-1 rounded-full' 
-                              : 'text-white/90'
-                          }`}>
-                            {currentTime < comment.appeal_deadline ? formatTimeRemaining(comment.appeal_deadline) : 'Expired'}
-                          </span>
+                        <div className="flex flex-col items-center gap-2 z-30 w-full max-w-sm mx-auto mt-2">
+                          {commentAppealId !== comment.id ? (
+                            <>
+                              <Button 
+                                variant="outline" size="sm"
+                                className="w-full bg-primary/10 border-primary text-primary hover:bg-primary hover:text-white transition-colors h-9 text-sm font-semibold shadow-[0_0_10px_rgba(var(--primary),0.3)]"
+                                onClick={() => setCommentAppealId(comment.id)} 
+                                disabled={isLocked || currentTime >= comment.appeal_deadline}
+                              >
+                                {isLocked ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
+                                Appeal Decision
+                              </Button>
+                              <span className={`text-[11px] font-medium transition-colors ${
+                                currentTime >= comment.appeal_deadline 
+                                  ? 'text-red-500 bg-red-500/10 px-3 py-1 rounded-full' 
+                                  : 'text-white/90'
+                              }`}>
+                                {currentTime < comment.appeal_deadline ? formatTimeRemaining(comment.appeal_deadline) : 'Expired'}
+                              </span>
+                            </>
+                          ) : (
+                            <div className="w-full flex flex-col gap-2">
+                              <textarea
+                                placeholder="State your defense. Why does this comment not violate the constitution?"
+                                className="w-full min-h-[80px] p-2 rounded-md bg-black/40 border border-primary/30 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none text-xs"
+                                value={commentAppealDefense}
+                                onChange={(e) => setCommentAppealDefense(e.target.value)}
+                                maxLength={2000}
+                              />
+                              <div className="flex gap-2">
+                                <Button 
+                                  variant="ghost" size="sm"
+                                  className="flex-1 text-white/70 hover:text-white h-7 text-xs"
+                                  onClick={() => setCommentAppealId(null)}
+                                  disabled={isLocked}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button 
+                                  size="sm"
+                                  className="flex-1 bg-primary hover:bg-primary/90 text-white h-7 text-xs"
+                                  onClick={() => handleAppealComment(comment.id)}
+                                  disabled={isLocked || commentAppealDefense.trim().length === 0}
+                                >
+                                  {isLocked ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                                  Submit
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                       {comment.appeal_used && (

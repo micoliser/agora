@@ -166,41 +166,9 @@ export function useTransaction() {
           errMsg.toLowerCase().includes("timeout") ||
           errMsg.toLowerCase().includes("timed out")
         ) {
-          // Transaction was submitted but polling timed out (likely rate limited).
-          // The tx probably succeeded on-chain, so still attempt sync + onConfirmed.
-          toast.loading("Syncing state (confirmation timed out, but tx was likely successful)...", { id: toastId });
-          
-          if (opts?.syncRequests && opts.syncRequests.length > 0) {
-            // Wait longer since GenLayer was clearly overloaded
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            for (const req of opts.syncRequests) {
-              try {
-                await fetchApi("/api/indexer/sync-request/", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    entity_type: req.entityType,
-                    entity_id: req.entityId,
-                  }),
-                });
-              } catch (syncErr) {
-                console.warn("Timeout recovery sync failed", req, syncErr);
-              }
-            }
-          }
-
-          if (opts?.onConfirmed) {
-            try {
-              await opts.onConfirmed(null);
-            } catch (confirmErr) {
-              console.warn("Timeout recovery onConfirmed failed", confirmErr);
-            }
-          }
-
-          setTxPhase("CONFIRMED");
-          toast.success(opts?.confirmedMessage || "Transaction likely confirmed!", {
-            id: toastId,
-          });
+          setTxPhase("FAILED");
+          setError("Network timeout");
+          toast.error("Transaction timed out. GenLayer is currently rate limited or overloaded. Please check back later.", { id: toastId, duration: 10000 });
           return;
         }
 

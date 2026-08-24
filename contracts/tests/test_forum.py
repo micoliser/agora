@@ -1,10 +1,20 @@
 import pytest
 import json
-from gltest import get_contract_factory, get_validator_factory
+from gltest import get_contract_factory, get_validator_factory, create_accounts
+
+accounts = create_accounts(4)
+admin = accounts[0]
+author = accounts[1]
+flagger = accounts[2]
+bad_flagger = accounts[3]
+
+def _mock_validators(count, is_violation, reason):
+    val_factory = get_validator_factory()
+    mock_response = json.dumps({"is_violation": is_violation, "reason": reason})
+    val_factory.batch_create_mock_validators(count=count, mock_llm_response=mock_response)
 
 @pytest.fixture
 def test_env():
-    # Deploy contract
     factory = get_contract_factory("Forum")
     contract = factory.deploy(
         args=[
@@ -16,13 +26,16 @@ def test_env():
             100, # starting_reputation
             50, # reputation_penalty_violation
             10, # reputation_penalty_bad_flag
+            30, # reputation_reward_good_flag
             300, # flag_cooldown_seconds
-        ]
+            86400 # min_flag_age_seconds (24 hours)
+        ],
+        account=admin
     )
     return contract
 
 def test_create_community(test_env):
-    contract = test_env
+    contract = test_env.connect(admin)
     community_id = contract.create_community(
         "Another DAO",
         "Desc",
@@ -32,170 +45,163 @@ def test_create_community(test_env):
         100,
         50,
         10,
-        300
+        30,
+        300,
+        86400
     )
     assert community_id == 1
     
     com = contract.get_community(community_id)
     assert com["name"] == "Another DAO"
+    assert com["min_flag_age_seconds"] == 86400
 
-def test_reputation_gating_and_posting(test_env):
+def test_sybil_gate_blocks_new_account_from_flagging(test_env, gltest_vm):
     contract = test_env
-    post_id = contract.create_post(0, "Hello world")
-    assert post_id == 0
+    # Author makes a post, implicitly joining
+    contract.connect(author).create_post(0, "Hello world")
+    
+    # Flagger makes a comment to implicitly join
+    contract.connect(flagger).create_comment(0, "I am joining")
+    
+    # Immediately try to flag the post
+    _mock_validators(3, True, "Spam")
+    try:
+        contract.connect(flagger).flag_post(0)
+        assert False, "Should have failed with min flag age error"
+    except Exception as e:
+        assert "Account is too new to flag in this community" in str(e)
+        
+    # Advance time by 25 hours
+    gltest_vm.timestamp += 90000
+    
+    # Now they should be able to flag
+    contract.connect(flagger).flag_post(0)
+    post = contract.get_post(0)
+    assert post["status"] == 1 # REMOVED
+
+def test_flag_post_violation_distinct_users(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Spam post")
+    
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    _mock_validators(3, True, "Spam detected")
+    contract.connect(flagger).flag_post(0)
     
     post = contract.get_post(0)
-    assert post["content"] == "Hello world"
-    assert post["status"] == 0 # ACTIVE
-
-def test_flagging_flow(test_env):
-    contract = test_env
-    post_id = contract.create_post(0, "Spam post")
-    
-    # Mock validator response for violation
-    val_factory = get_validator_factory()
-    mock_response = json.dumps({"is_violation": True, "reason": "Spam detected"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response)
-    
-    result = contract.flag_post(post_id)
-    res_dict = json.loads(result)
-    assert res_dict["is_violation"] is True
-    
-    post = contract.get_post(post_id)
     assert post["status"] == 1 # REMOVED
     assert post["moderation_verdict"] == "Spam detected"
+    
+    # Author penalty: 100 - 50 = 50
+    assert contract.get_reputation(0, author) == 50
+    # Flagger reward: 100 + 30 = 130
+    assert contract.get_reputation(0, flagger) == 130
 
-def test_appeal_flow(test_env):
+def test_flag_post_no_violation_distinct_users(test_env, gltest_vm):
     contract = test_env
-    post_id = contract.create_post(0, "Unfairly removed post")
+    contract.connect(author).create_post(0, "Good post")
+    contract.connect(bad_flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
     
-    # Flag it (mock removal)
-    val_factory = get_validator_factory()
-    mock_response_remove = json.dumps({"is_violation": True, "reason": "Spam detected"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_remove)
+    _mock_validators(3, False, "Not spam")
+    contract.connect(bad_flagger).flag_post(0)
     
-    contract.flag_post(post_id)
+    post = contract.get_post(0)
+    assert post["status"] == 0 # ACTIVE
     
-    # Now appeal it (mock overturned)
-    mock_response_appeal = json.dumps({"is_violation": False, "reason": "Not spam"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_appeal)
+    # Author untouched
+    assert contract.get_reputation(0, author) == 100
+    # Flagger penalty: 100 - 10 = 90
+    assert contract.get_reputation(0, bad_flagger) == 90
+
+def test_appeal_post_overturned_distinct_users(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Unfairly removed")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
     
-    result = contract.appeal_post(post_id)
-    res_dict = json.loads(result)
-    assert res_dict["overturned"] is True
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_post(0)
     
-    post = contract.get_post(post_id)
+    _mock_validators(3, False, "Not spam")
+    # Appeal with defense
+    contract.connect(author).appeal_post(0, "This is not spam because I am just sharing a valid link")
+    
+    post = contract.get_post(0)
     assert post["status"] == 2 # RESTORED
+    assert post["appeal_verdict"] == "Not spam"
+    
+    # Reputation should be reversed
+    assert contract.get_reputation(0, author) == 100
+    assert contract.get_reputation(0, flagger) == 100
 
-def test_comment_flow(test_env):
+def test_appeal_post_denied(test_env, gltest_vm):
     contract = test_env
-    # We already have a post from post_id=0 but tests might share state or not based on fixture scope.
-    # The fixture is function scoped by default in pytest unless specified. But test_env is just `@pytest.fixture` which is function scoped.
-    # So every test gets a fresh contract. We need to create a post first.
-    post_id = contract.create_post(0, "A valid post")
+    contract.connect(author).create_post(0, "Actually spam")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
     
-    # 1. Create Comment
-    comment_id = contract.create_comment(post_id, "A valid comment")
-    comment = contract.get_comment(comment_id)
-    assert comment["content"] == "A valid comment"
-    assert comment["status"] == 0 # ACTIVE
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_post(0)
     
-    # 2. Flag Comment (mock removal)
-    val_factory = get_validator_factory()
-    mock_response_remove = json.dumps({"is_violation": True, "reason": "Toxic comment"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_remove)
+    _mock_validators(3, True, "Still spam")
+    contract.connect(author).appeal_post(0, "Please?")
     
-    contract.flag_comment(comment_id)
+    post = contract.get_post(0)
+    assert post["status"] == 3 # APPEAL_DENIED
     
-    comment = contract.get_comment(comment_id)
-    assert comment["status"] == 1 # REMOVED
-    assert comment["moderation_verdict"] == "Toxic comment"
-    
-    # 3. Appeal Comment (mock overturned)
-    mock_response_appeal = json.dumps({"is_violation": False, "reason": "Not toxic, just constructive criticism"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_appeal)
-    
-    contract.appeal_comment(comment_id)
-    
-    comment = contract.get_comment(comment_id)
-    assert comment["status"] == 2 # RESTORED
-    assert comment["appeal_verdict"] == "Not toxic, just constructive criticism"
+    # Reputation stays penalized/rewarded
+    assert contract.get_reputation(0, author) == 50
+    assert contract.get_reputation(0, flagger) == 130
 
-def test_reputation_math(test_env):
+def test_cannot_flag_own_content(test_env, gltest_vm):
     contract = test_env
+    contract.connect(author).create_post(0, "My post")
+    gltest_vm.timestamp += 90000
     
-    # Get initial reputations
-    # The caller is the deployer by default in gltest for the fixture, but we don't have explicit user control.
-    # Let's just use the current default sender.
-    sender = "0x0000000000000000000000000000000000000000" # gltest uses address 0 by default? Actually, let's just query it.
-    
-    post_id = contract.create_post(0, "Post content")
-    
-    # Flag the post (violation)
-    val_factory = get_validator_factory()
-    mock_response_remove = json.dumps({"is_violation": True, "reason": "Bad"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_remove)
-    
-    contract.flag_post(post_id)
-    
-    # The flagger and the author are both the default sender here. Let's see what happens.
-    # Initial was 100.
-    # Flagger reward: +10 (good flag)
-    # Author penalty: -50 (violation)
-    # Net: 100 + 10 - 50 = 60
-    # BUT wait, the same sender cannot flag their own post? The contract says "You have already flagged this post" NO, it only tracks if you flagged it, not if you authored it!
-    # Wait, in the contract:
-    # flag_key = f"{post_id}:{flagger.as_hex}"
-    
-    # We can check reputation of post author. Since we don't know the exact address gltest is using for default, we can parse it from get_post
-    post = contract.get_post(post_id)
-    author_address = post["author"]
-    
-    rep = contract.get_reputation(0, author_address)
-    assert rep == 60 # 100 - 50 (penalty) + 10 (reward)
-
-def test_reputation_gating(test_env):
-    contract = test_env
-    # To test gating, we need to drop the reputation below min_reputation_to_post (50).
-    # Current rep is 100.
-    post_id1 = contract.create_post(0, "Bad post 1")
-    
-    val_factory = get_validator_factory()
-    mock_response_remove = json.dumps({"is_violation": True, "reason": "Bad"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_remove)
-    
-    # First violation
-    contract.flag_post(post_id1)
-    
-    post = contract.get_post(post_id1)
-    author_address = post["author"]
-    
-    # Rep is now 60. Still >= 50.
-    # Create another post
-    post_id2 = contract.create_post(0, "Bad post 2")
-    
-    # Need to bypass cooldown! Wait, the cooldown is 300 seconds.
-    # Since we flagged post 1, the same user is on cooldown.
-    # So if we flag post 2 immediately, it will fail. Let's see if we can manipulate time or bypass it.
-    # Actually, let's just make a bad flag on a good post.
-    # But wait, if we are on cooldown, we can't make a bad flag either.
-    # We will test cooldown in a separate test, but here we can't flag again.
-    pass
-
-def test_flag_cooldown(test_env):
-    contract = test_env
-    post_id1 = contract.create_post(0, "Post 1")
-    post_id2 = contract.create_post(0, "Post 2")
-    
-    val_factory = get_validator_factory()
-    mock_response_remove = json.dumps({"is_violation": True, "reason": "Bad"})
-    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response_remove)
-    
-    contract.flag_post(post_id1)
-    
-    # Flagging second post should fail due to cooldown
     try:
-        contract.flag_post(post_id2)
-        assert False, "Should have failed with cooldown"
+        contract.connect(author).flag_post(0)
+        assert False, "Should have prevented self flag"
     except Exception as e:
-        assert "Flag cooldown active" in str(e)
+        assert "cannot flag your own content" in str(e)
+
+def test_strict_verdict_rejects_non_boolean(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Spam post")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    # Return string "true" instead of boolean true
+    val_factory = get_validator_factory()
+    mock_response = json.dumps({"is_violation": "true", "reason": "Spam"})
+    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response)
+    
+    try:
+        contract.connect(flagger).flag_post(0)
+        assert False, "Should reject non-boolean"
+    except Exception as e:
+        assert "must be a boolean" in str(e)
+
+def test_reputation_clamping_and_reversal(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Bad")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    # We need multiple penalties to drive author to 0
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_post(0) # author rep = 50
+    
+    gltest_vm.timestamp += 400 # Pass flag cooldown
+    contract.connect(author).create_post(0, "Bad 2")
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_post(2) # author rep = 0 (deducted 50)
+    
+    assert contract.get_reputation(0, author) == 0
+    
+    # Let's appeal the second post and ensure only 50 is restored.
+    _mock_validators(3, False, "Not spam")
+    contract.connect(author).appeal_post(2, "Defense")
+    
+    assert contract.get_reputation(0, author) == 50

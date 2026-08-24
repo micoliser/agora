@@ -16,6 +16,13 @@ export function useAuth() {
     const storedToken = localStorage.getItem('jwt');
     if (storedToken) setToken(storedToken);
     setIsInitializing(false);
+
+    const handleUnauthorized = () => {
+      setToken(null);
+      localStorage.removeItem('jwt');
+    };
+    window.addEventListener('unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('unauthorized', handleUnauthorized);
   }, []);
 
   const login = async () => {
