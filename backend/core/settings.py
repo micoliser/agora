@@ -66,9 +66,16 @@ CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 
 CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+# Removing the result backend entirely saves massive amounts of write/read commands since we don't need task results
+# CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0') 
+CELERY_TASK_IGNORE_RESULT = True
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+
+# Celery is notoriously chatty on Redis. Disable gossip, mingle, and events to save commands on Upstash.
+CELERY_WORKER_SEND_TASK_EVENTS = False
+CELERY_WORKER_DISABLE_GOSSIP = True
+CELERY_WORKER_DISABLE_MINGLE = True
 
 GENLAYER_CONTRACT_ADDRESS = "0x..." # To be filled manually by user after deploy
 GENLAYER_RPC_URL = "https://studio.genlayer.com/rpc" # Or studionet / bradbury
