@@ -1,5 +1,6 @@
 import pytest
 import json
+from genlayer import u256
 from gltest import get_contract_factory, get_validator_factory, create_accounts
 
 accounts = create_accounts(4)
@@ -21,14 +22,14 @@ def test_env():
             "Test DAO",
             "A test community",
             "No spam",
-            86400, # appeal_window_seconds
-            50, # min_reputation_to_post
-            100, # starting_reputation
-            50, # reputation_penalty_violation
-            10, # reputation_penalty_bad_flag
-            30, # reputation_reward_good_flag
-            300, # flag_cooldown_seconds
-            86400 # min_flag_age_seconds (24 hours)
+            u256(86400), # appeal_window_seconds
+            u256(50), # min_reputation_to_post
+            u256(100), # starting_reputation
+            u256(50), # reputation_penalty_violation
+            u256(10), # reputation_penalty_bad_flag
+            u256(30), # reputation_reward_good_flag
+            u256(300), # flag_cooldown_seconds
+            u256(86400) # min_flag_age_seconds (24 hours)
         ],
         account=admin
     )
@@ -40,14 +41,14 @@ def test_create_community(test_env):
         "Another DAO",
         "Desc",
         "Rules",
-        86400,
-        50,
-        100,
-        50,
-        10,
-        30,
-        300,
-        86400
+        u256(86400),
+        u256(50),
+        u256(100),
+        u256(50),
+        u256(10),
+        u256(30),
+        u256(300),
+        u256(86400)
     )
     assert community_id == 1
     
@@ -256,3 +257,65 @@ def test_strict_verdict_rejects_empty_string_reason(test_env, gltest_vm):
         assert False, "Should reject empty string reason"
     except Exception as e:
         assert "'reason' must be a non-empty string" in str(e)
+
+def test_flag_comment_violation(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Good post")
+    contract.connect(author).create_comment(0, "Spam comment")
+    
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    _mock_validators(3, True, "Spam comment detected")
+    contract.connect(flagger).flag_comment(0)
+    
+    comment = contract.get_comment(0)
+    assert comment["status"] == 1 # REMOVED
+    assert comment["moderation_verdict"] == "Spam comment detected"
+    
+    # Author penalty
+    assert contract.get_reputation(0, author) == 50
+    # Flagger reward
+    assert contract.get_reputation(0, flagger) == 130
+
+def test_appeal_comment_overturned(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Good post")
+    contract.connect(author).create_comment(0, "Unfairly removed comment")
+    
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_comment(0)
+    
+    _mock_validators(3, False, "Not spam")
+    contract.connect(author).appeal_comment(0, "This is not spam")
+    
+    comment = contract.get_comment(0)
+    assert comment["status"] == 2 # RESTORED
+    assert comment["appeal_verdict"] == "Not spam"
+    
+    # Reputation should be reversed
+    assert contract.get_reputation(0, author) == 100
+    assert contract.get_reputation(0, flagger) == 100
+
+def test_appeal_comment_denied(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Good post")
+    contract.connect(author).create_comment(0, "Spam comment")
+    
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    _mock_validators(3, True, "Spam")
+    contract.connect(flagger).flag_comment(0)
+    
+    _mock_validators(3, True, "Still spam")
+    contract.connect(author).appeal_comment(0, "Please?")
+    
+    comment = contract.get_comment(0)
+    assert comment["status"] == 3 # APPEAL_DENIED
+    
+    assert contract.get_reputation(0, author) == 50
+    assert contract.get_reputation(0, flagger) == 130
