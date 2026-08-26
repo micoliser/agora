@@ -407,8 +407,11 @@ POST CONTENT:
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
             
+        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
+            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
+            
         is_violation = result_data["is_violation"]
-        reason = result_data.get("reason", "")
+        reason = result_data["reason"].strip()
 
         if is_violation:
             post.status = STATUS_REMOVED
@@ -529,8 +532,11 @@ AUTHOR'S DEFENSE:
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
             
+        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
+            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
+            
         is_violation = result_data["is_violation"]
-        reason = result_data.get("reason", "")
+        reason = result_data["reason"].strip()
             
         post.appeal_verdict = reason
         
@@ -663,8 +669,11 @@ COMMENT CONTENT:
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
             
+        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
+            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
+            
         is_violation = result_data["is_violation"]
-        reason = result_data.get("reason", "")
+        reason = result_data["reason"].strip()
 
         if is_violation:
             comment.status = STATUS_REMOVED
@@ -791,8 +800,11 @@ AUTHOR'S DEFENSE:
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
             
+        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
+            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
+            
         is_violation = result_data["is_violation"]
-        reason = result_data.get("reason", "")
+        reason = result_data["reason"].strip()
             
         comment.appeal_verdict = reason
         

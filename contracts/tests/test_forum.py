@@ -205,3 +205,54 @@ def test_reputation_clamping_and_reversal(test_env, gltest_vm):
     contract.connect(author).appeal_post(2, "Defense")
     
     assert contract.get_reputation(0, author) == 50
+
+def test_strict_verdict_rejects_missing_reason(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Spam post")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    # Missing reason
+    val_factory = get_validator_factory()
+    mock_response = json.dumps({"is_violation": True})
+    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response)
+    
+    try:
+        contract.connect(flagger).flag_post(0)
+        assert False, "Should reject missing reason"
+    except Exception as e:
+        assert "'reason' must be a non-empty string" in str(e)
+
+def test_strict_verdict_rejects_non_string_reason(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Spam post")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    # Non-string reason
+    val_factory = get_validator_factory()
+    mock_response = json.dumps({"is_violation": True, "reason": 123})
+    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response)
+    
+    try:
+        contract.connect(flagger).flag_post(0)
+        assert False, "Should reject non-string reason"
+    except Exception as e:
+        assert "'reason' must be a non-empty string" in str(e)
+
+def test_strict_verdict_rejects_empty_string_reason(test_env, gltest_vm):
+    contract = test_env
+    contract.connect(author).create_post(0, "Spam post")
+    contract.connect(flagger).create_post(0, "Join")
+    gltest_vm.timestamp += 90000
+    
+    # Empty string reason
+    val_factory = get_validator_factory()
+    mock_response = json.dumps({"is_violation": True, "reason": "   "})
+    val_factory.batch_create_mock_validators(count=3, mock_llm_response=mock_response)
+    
+    try:
+        contract.connect(flagger).flag_post(0)
+        assert False, "Should reject empty string reason"
+    except Exception as e:
+        assert "'reason' must be a non-empty string" in str(e)
