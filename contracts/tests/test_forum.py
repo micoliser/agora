@@ -26,8 +26,8 @@ def test_env():
             u256(50), # min_reputation_to_post
             u256(100), # starting_reputation
             u256(50), # reputation_penalty_violation
-            u256(10), # reputation_penalty_bad_flag
-            u256(30), # reputation_reward_good_flag
+            u256(30), # reputation_penalty_bad_flag
+            u256(10), # reputation_reward_good_flag
             u256(300), # flag_cooldown_seconds
             u256(86400) # min_flag_age_seconds (24 hours)
         ],
@@ -45,8 +45,8 @@ def test_create_community(test_env):
         u256(50),
         u256(100),
         u256(50),
-        u256(10),
         u256(30),
+        u256(10),
         u256(300),
         u256(86400)
     )
@@ -96,8 +96,8 @@ def test_flag_post_violation_distinct_users(test_env, gltest_vm):
     
     # Author penalty: 100 - 50 = 50
     assert contract.get_reputation(0, author) == 50
-    # Flagger reward: 100 + 30 = 130
-    assert contract.get_reputation(0, flagger) == 130
+    # Flagger reward: 100 + 10 = 110
+    assert contract.get_reputation(0, flagger) == 110
 
 def test_flag_post_no_violation_distinct_users(test_env, gltest_vm):
     contract = test_env
@@ -113,8 +113,8 @@ def test_flag_post_no_violation_distinct_users(test_env, gltest_vm):
     
     # Author untouched
     assert contract.get_reputation(0, author) == 100
-    # Flagger penalty: 100 - 10 = 90
-    assert contract.get_reputation(0, bad_flagger) == 90
+    # Flagger penalty: 100 - 30 = 70
+    assert contract.get_reputation(0, bad_flagger) == 70
 
 def test_appeal_post_overturned_distinct_users(test_env, gltest_vm):
     contract = test_env
@@ -154,7 +154,7 @@ def test_appeal_post_denied(test_env, gltest_vm):
     
     # Reputation stays penalized/rewarded
     assert contract.get_reputation(0, author) == 50
-    assert contract.get_reputation(0, flagger) == 130
+    assert contract.get_reputation(0, flagger) == 110
 
 def test_cannot_flag_own_content(test_env, gltest_vm):
     contract = test_env
@@ -276,7 +276,7 @@ def test_flag_comment_violation(test_env, gltest_vm):
     # Author penalty
     assert contract.get_reputation(0, author) == 50
     # Flagger reward
-    assert contract.get_reputation(0, flagger) == 130
+    assert contract.get_reputation(0, flagger) == 110
 
 def test_appeal_comment_overturned(test_env, gltest_vm):
     contract = test_env
@@ -318,4 +318,4 @@ def test_appeal_comment_denied(test_env, gltest_vm):
     assert comment["status"] == 3 # APPEAL_DENIED
     
     assert contract.get_reputation(0, author) == 50
-    assert contract.get_reputation(0, flagger) == 130
+    assert contract.get_reputation(0, flagger) == 110
