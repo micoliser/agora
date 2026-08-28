@@ -77,7 +77,7 @@ To run the tests:
 
 ```bash
 cd contracts
-pytest test_forum.py -v
+pytest tests/ -v
 ```
 
 This suite verifies community creation, reputation economics, the AI moderation flow, Sybil resistance constraints (`min_flag_age`), and cooldown limitations.

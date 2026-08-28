@@ -348,7 +348,7 @@ class Forum(gl.Contract):
         post_content = post.content.replace('<', '&lt;').replace('>', '&gt;')
         constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
         
-        def moderation_task() -> str:
+        def moderation_task() -> dict:
             prompt = f"""
 Evaluate the following forum post against the community constitution.
 Determine if it violates the constitution.
@@ -372,37 +372,35 @@ Return a JSON object with exactly two keys:
 "is_violation": boolean (true if it violates, false otherwise)
 "reason": string (brief explanation)
 """
-            result = gl.nondet.exec_prompt(prompt)
-            # We expect standard LLM output. Since we need strict JSON, we instruct carefully.
-            # If the LLM wraps in markdown, we strip it in the equivalence wrapper.
-            return result
+            return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        criteria = f"""
-The task is to determine if a post violates a community constitution.
-The leader will provide a JSON object. 
-Ensure the JSON is well-formed, contains 'is_violation' and 'reason', and that the conclusion reasonably follows from applying the constitution to the post content.
+        def validator_task(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            
+            my_result = moderation_task()
+            try:
+                my_violation = bool(my_result.get("is_violation"))
+                leader_violation = bool(leaders_res.calldata.get("is_violation"))
+                return my_violation == leader_violation
+            except:
+                return False
 
-CONSTITUTION:
-<constitution>
-{constitution}
-</constitution>
-
-POST CONTENT:
-<post_content>
-{post_content}
-</post_content>
-"""
-        raw_result = gl.eq_principle.prompt_non_comparative(moderation_task, task="Evaluate constitution violation", criteria=criteria)
-        
-        # Strip markdown formatting if any
-        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-        
         try:
-            result_data = json.loads(raw_result)
-            if not isinstance(result_data, dict):
-                raise ValueError("LLM returned non-dict JSON")
+            raw_result = gl.vm.run_nondet(moderation_task, validator_task)
         except Exception as e:
-            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
+            
+        if isinstance(raw_result, str):
+            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+            try:
+                result_data = json.loads(raw_result)
+                if not isinstance(result_data, dict):
+                    raise ValueError("LLM returned non-dict JSON")
+            except Exception as e:
+                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+        else:
+            result_data = raw_result
             
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
@@ -477,7 +475,7 @@ POST CONTENT:
         post_content = post.content.replace('<', '&lt;').replace('>', '&gt;')
         constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
         
-        def appeal_task() -> str:
+        def appeal_task() -> dict:
             prompt = f"""
 Evaluate the following forum post against the community constitution.
 Determine if it violates the constitution.
@@ -507,36 +505,34 @@ Return a JSON object with exactly two keys:
 "is_violation": boolean (true if it violates, false otherwise)
 "reason": string (brief explanation)
 """
-            return gl.nondet.exec_prompt(prompt)
+            return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        criteria = f"""
-The task is to independently re-evaluate if a post violates a community constitution.
-Ensure the JSON is well-formed, contains 'is_violation' and 'reason', and that the conclusion reasonably follows from applying the constitution to the post content.
+        def validator_task(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            my_result = appeal_task()
+            try:
+                my_violation = bool(my_result.get("is_violation"))
+                leader_violation = bool(leaders_res.calldata.get("is_violation"))
+                return my_violation == leader_violation
+            except:
+                return False
 
-CONSTITUTION:
-<constitution>
-{constitution}
-</constitution>
-
-POST CONTENT:
-<post_content>
-{post_content}
-</post_content>
-
-<author_defense>
-{defense}
-</author_defense>
-"""
-        raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate constitution violation appeal", criteria=criteria)
-        
-        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-        
         try:
-            result_data = json.loads(raw_result)
-            if not isinstance(result_data, dict):
-                raise ValueError("LLM returned non-dict JSON")
+            raw_result = gl.vm.run_nondet(appeal_task, validator_task)
         except Exception as e:
-            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
+            
+        if isinstance(raw_result, str):
+            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+            try:
+                result_data = json.loads(raw_result)
+                if not isinstance(result_data, dict):
+                    raise ValueError("LLM returned non-dict JSON")
+            except Exception as e:
+                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+        else:
+            result_data = raw_result
             
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
@@ -613,7 +609,7 @@ POST CONTENT:
         constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
         parent_post_content = self.posts[comment.post_id].content.replace('<', '&lt;').replace('>', '&gt;')
         
-        def moderation_task() -> str:
+        def moderation_task() -> dict:
             prompt = f"""
 Evaluate the following forum comment against the community constitution.
 Determine if it violates the constitution.
@@ -644,37 +640,34 @@ Return a JSON object with exactly two keys:
 "is_violation": boolean (true if it violates, false otherwise)
 "reason": string (brief explanation)
 """
-            return gl.nondet.exec_prompt(prompt)
+            return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        criteria = f"""
-The task is to determine if a comment violates a community constitution.
-Ensure the JSON is well-formed, contains 'is_violation' and 'reason', and that the conclusion reasonably follows from applying the constitution to the comment content.
+        def validator_task(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            my_result = moderation_task()
+            try:
+                my_violation = bool(my_result.get("is_violation"))
+                leader_violation = bool(leaders_res.calldata.get("is_violation"))
+                return my_violation == leader_violation
+            except:
+                return False
 
-CONSTITUTION:
-<constitution>
-{constitution}
-</constitution>
-
-PARENT POST CONTEXT:
-<parent_post_content>
-{parent_post_content}
-</parent_post_content>
-
-COMMENT CONTENT:
-<comment_content>
-{comment_content}
-</comment_content>
-"""
-        raw_result = gl.eq_principle.prompt_non_comparative(moderation_task, task="Evaluate comment violation", criteria=criteria)
-        
-        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-        
         try:
-            result_data = json.loads(raw_result)
-            if not isinstance(result_data, dict):
-                raise ValueError("LLM returned non-dict JSON")
+            raw_result = gl.vm.run_nondet(moderation_task, validator_task)
         except Exception as e:
-            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
+            
+        if isinstance(raw_result, str):
+            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+            try:
+                result_data = json.loads(raw_result)
+                if not isinstance(result_data, dict):
+                    raise ValueError("LLM returned non-dict JSON")
+            except Exception as e:
+                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+        else:
+            result_data = raw_result
             
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
@@ -748,7 +741,7 @@ COMMENT CONTENT:
         constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
         parent_post_content = self.posts[comment.post_id].content.replace('<', '&lt;').replace('>', '&gt;')
         
-        def appeal_task() -> str:
+        def appeal_task() -> dict:
             prompt = f"""
 Evaluate the following forum comment against the community constitution.
 Determine if it violates the constitution.
@@ -785,41 +778,34 @@ Return a JSON object with exactly two keys:
 "is_violation": boolean (true if it violates, false otherwise)
 "reason": string (brief explanation)
 """
-            return gl.nondet.exec_prompt(prompt)
+            return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        criteria = f"""
-The task is to independently re-evaluate if a comment violates a community constitution.
-Ensure the JSON is well-formed, contains 'is_violation' and 'reason', and that the conclusion reasonably follows from applying the constitution to the comment content.
+        def validator_task(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return False
+            my_result = appeal_task()
+            try:
+                my_violation = bool(my_result.get("is_violation"))
+                leader_violation = bool(leaders_res.calldata.get("is_violation"))
+                return my_violation == leader_violation
+            except:
+                return False
 
-CONSTITUTION:
-<constitution>
-{constitution}
-</constitution>
-
-PARENT POST CONTEXT:
-<parent_post_content>
-{parent_post_content}
-</parent_post_content>
-
-COMMENT CONTENT:
-<comment_content>
-{comment_content}
-</comment_content>
-
-<author_defense>
-{defense}
-</author_defense>
-"""
-        raw_result = gl.eq_principle.prompt_non_comparative(appeal_task, task="Evaluate comment violation appeal", criteria=criteria)
-        
-        raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-        
         try:
-            result_data = json.loads(raw_result)
-            if not isinstance(result_data, dict):
-                raise ValueError("LLM returned non-dict JSON")
+            raw_result = gl.vm.run_nondet(appeal_task, validator_task)
         except Exception as e:
-            raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
+            
+        if isinstance(raw_result, str):
+            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
+            try:
+                result_data = json.loads(raw_result)
+                if not isinstance(result_data, dict):
+                    raise ValueError("LLM returned non-dict JSON")
+            except Exception as e:
+                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
+        else:
+            result_data = raw_result
             
         if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
             raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
