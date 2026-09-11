@@ -20,6 +20,7 @@ urlpatterns = [
     path('communities/<int:community_id>/reputation/<str:address>/', views.user_reputation, name='user_reputation'),
     path('posts/<int:post_id>/', views.post_detail, name='post_detail'),
     path('posts/<int:post_id>/comments/', views.post_comments, name='post_comments'),
+    path('indexer/poll/', views.indexer_poll, name='indexer_poll'),
     path('indexer/sync-request/', views.sync_request, name='sync_request'),
     path('indexer/latest-community/', views.latest_community, name='latest_community'),
     path('indexer/latest-post/', views.latest_post, name='latest_post'),

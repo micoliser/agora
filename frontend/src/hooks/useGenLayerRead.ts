@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
-import { createClient } from 'genlayer-js';
-import { studionet } from 'genlayer-js/chains';
+import { createReadClient } from '@/lib/genlayer/client';
 
 export function useGenLayerRead() {
   const [isPending, setIsPending] = useState(false);
@@ -14,22 +13,8 @@ export function useGenLayerRead() {
     try {
       setIsPending(true);
       setError(null);
-      
-      const safeStudionet = studionet || {
-        id: 61999,
-        isStudio: true,
-        name: "Genlayer Studio Network",
-        rpcUrls: {
-          default: {
-            http: ["https://studio.genlayer.com/api"]
-          }
-        },
-        nativeCurrency: { name: "GEN Token", symbol: "GEN", decimals: 18 }
-      };
 
-      const client = createClient({
-        chain: safeStudionet,
-      });
+      const client = createReadClient();
 
       const result = await client.readContract({
         address: contractAddress as `0x${string}`,

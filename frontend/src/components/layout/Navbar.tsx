@@ -7,18 +7,38 @@ import { useEffect, useState } from 'react'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { injected } from 'wagmi/connectors'
-import { Shield, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { NotificationDropdown } from './NotificationDropdown'
 import { usePathname } from 'next/navigation'
+import { ensureStudionetChain, studionetChain } from '@/lib/genlayer/chain'
+import { requireMetaMaskProvider } from '@/lib/genlayer/client'
 
 export function Navbar() {
-  const { address, isConnected } = useAccount()
-  const { connect } = useConnect()
+  const { address, isConnected, chainId } = useAccount()
+  const { connectAsync } = useConnect()
   const { disconnect } = useDisconnect()
   const { logout } = useAuth()
   const pathname = usePathname()
   const mounted = useMounted()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [connectBusy, setConnectBusy] = useState(false)
+
+  const wrongChain = isConnected && chainId != null && chainId !== studionetChain.id
+
+  const onConnect = async () => {
+    setConnectBusy(true)
+    try {
+      requireMetaMaskProvider()
+      if (!isConnected) {
+        await connectAsync({ connector: injected({ target: 'metaMask' }) })
+      }
+      await ensureStudionetChain()
+    } catch (err) {
+      console.error('Wallet connect failed:', err)
+    } finally {
+      setConnectBusy(false)
+    }
+  }
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -58,20 +78,33 @@ export function Navbar() {
           <div className="hidden md:block">
             {mounted ? (
               isConnected ? (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="rounded-full bg-[#130E26] border-border hover:bg-[#1C1635] text-foreground font-semibold h-10 px-4"
-                  onClick={() => { logout(); disconnect(); }}
-                >
-                  {address?.slice(0, 6)}...{address?.slice(-4)}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {wrongChain && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full h-10 px-3 text-xs"
+                      onClick={() => { void ensureStudionetChain() }}
+                    >
+                      Switch to Studionet
+                    </Button>
+                  )}
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="rounded-full bg-[#130E26] border-border hover:bg-[#1C1635] text-foreground font-semibold h-10 px-4"
+                    onClick={() => { logout(); disconnect(); }}
+                  >
+                    {address?.slice(0, 6)}...{address?.slice(-4)}
+                  </Button>
+                </div>
               ) : (
                 <Button 
-                  onClick={() => connect({ connector: injected() })}
+                  onClick={() => { void onConnect() }}
+                  disabled={connectBusy}
                   className="rounded-full bg-primary hover:bg-primary/90 text-white font-bold h-10 px-6 shadow-[0_0_20px_rgba(130,80,223,0.3)] transition-all"
                 >
-                  Connect Wallet
+                  {connectBusy ? 'Connecting...' : 'Connect Wallet'}
                 </Button>
               )
             ) : (
@@ -126,10 +159,11 @@ export function Navbar() {
                 </Button>
               ) : (
                 <Button 
-                  onClick={() => connect({ connector: injected() })}
+                  onClick={() => { void onConnect() }}
+                  disabled={connectBusy}
                   className="w-full h-14 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-lg shadow-[0_0_20px_rgba(130,80,223,0.3)] transition-all"
                 >
-                  Connect Wallet
+                  {connectBusy ? 'Connecting...' : 'Connect Wallet'}
                 </Button>
               )
             ) : (

@@ -15,6 +15,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count
 from .models import Community, Post, Comment, UserActivity, Notification
 from .tasks import poll_genlayer_state
+import json
+import secrets
 
 def serialize_community(c):
     return {
@@ -28,7 +30,9 @@ def serialize_community(c):
         "starting_reputation": c.starting_reputation,
         "reputation_penalty_violation": c.reputation_penalty_violation,
         "reputation_penalty_bad_flag": c.reputation_penalty_bad_flag,
+        "reputation_reward_good_flag": c.reputation_reward_good_flag,
         "flag_cooldown_seconds": c.flag_cooldown_seconds,
+        "min_flag_age_seconds": c.min_flag_age_seconds,
         "created_at": c.created_at,
     }
 
@@ -71,7 +75,7 @@ def serialize_comment(c):
 
 def get_pagination(request):
     try:
-        limit = min(int(request.GET.get('limit', 20)), 100)
+        limit = min(int(request.GET.get('limit', 20)), 50)
         offset = max(int(request.GET.get('offset', 0)), 0)
     except ValueError:
         limit = 20
@@ -105,7 +109,27 @@ def post_comments(request, post_id):
     comments = Comment.objects.filter(post_id=post_id, status__in=[0, 2]).select_related('community').order_by("created_at")
     return JsonResponse([serialize_comment(c) for c in comments], safe=False)
 
-from .tasks import sync_entity, async_sync_entity, call_read_contract
+from .tasks import sync_entity, enqueue_sync_entity, call_read_contract
+
+SECRET_HEADER = "X-Sync-Secret"
+
+
+def _secret_ok(request) -> bool:
+    """
+    Gate POST /api/indexer/poll/.
+
+    Non-empty SYNC_SHARED_SECRET: require matching X-Sync-Secret header
+    (header only, never query string). Empty secret is allowed only when
+    DEBUG=True. Production refuses to boot without a secret (see settings.py).
+    """
+    expected = settings.SYNC_SHARED_SECRET or ""
+    if not expected:
+        return bool(settings.DEBUG)
+    provided = request.headers.get(SECRET_HEADER) or ""
+    if not provided:
+        return False
+    return secrets.compare_digest(provided, expected)
+
 
 def jwt_required(func):
     def wrapper(request, *args, **kwargs):
@@ -196,11 +220,58 @@ def auth_verify(request):
 
 
 @csrf_exempt
+def indexer_poll(request):
+    """POST /api/indexer/poll/ — Render cron / manual refresh. No JWT. No Celery."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if not _secret_ok(request):
+        return JsonResponse(
+            {"error": f"Missing or invalid {SECRET_HEADER}."},
+            status=403,
+        )
+
+    full = False
+    content_type = (request.content_type or "").split(";")[0].strip().lower()
+    if request.body and content_type == "application/json":
+        try:
+            data = json.loads(request.body.decode("utf-8"))
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        if isinstance(data, dict):
+            full = bool(data.get("full"))
+
+    try:
+        ok = poll_genlayer_state(full=full)
+    except Exception:
+        logger.exception("indexer_poll failed")
+        return JsonResponse(
+            {"error": "Could not reach GenLayer. Try again shortly."},
+            status=502,
+        )
+    if not ok:
+        return JsonResponse(
+            {"error": "Could not reach GenLayer. Try again shortly."},
+            status=502,
+        )
+
+    return JsonResponse(
+        {
+            "synced": True,
+            "full": full,
+            "counts": {
+                "communities": Community.objects.count(),
+                "posts": Post.objects.count(),
+                "comments": Comment.objects.count(),
+            },
+        }
+    )
+
+
+@csrf_exempt
 @jwt_required
 def sync_request(request):
     if request.method == "POST":
         try:
-            import json
             body = request.body.decode('utf-8')
             if body:
                 try:
@@ -221,8 +292,8 @@ def sync_request(request):
                                 if obj and getattr(obj, 'status', None) != current_state.get('status'):
                                     return JsonResponse({"status": "synced"})
 
-                        async_sync_entity.delay(entity_type, entity_id, current_state)
-                        return JsonResponse({"status": "queued"})
+                        status = enqueue_sync_entity(entity_type, entity_id, current_state)
+                        return JsonResponse({"status": status})
                 except json.JSONDecodeError:
                     pass
             return JsonResponse({"error": "Invalid request or missing entity_type/entity_id"}, status=400)

@@ -10,6 +10,88 @@ STATUS_REMOVED = 1
 STATUS_RESTORED = 2
 STATUS_APPEAL_DENIED = 3
 
+
+def _expected(msg: str):
+    raise gl.vm.UserError(f"[EXPECTED] {msg}")
+
+
+def _llm_error(msg: str):
+    if msg.startswith("["):
+        raise gl.vm.UserError(msg)
+    raise gl.vm.UserError(f"[LLM_ERROR] {msg}")
+
+
+def _escape_untrusted(text: str) -> str:
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _extract_json_object(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    text = raw.strip() if isinstance(raw, str) else str(raw)
+    if text.startswith("```"):
+        text = text.replace("```json", "").replace("```", "").strip()
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        parsed = json.loads(text[start : end + 1])
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("LLM returned non-dict JSON")
+
+
+def _run_verdict(leader_fn) -> dict:
+    """Bind consensus to is_violation only. Persist the leader reason after that bool agrees."""
+
+    def validator_fn(leaders_res: gl.vm.Result) -> bool:
+        if not isinstance(leaders_res, gl.vm.Return):
+            return False
+        try:
+            leader_data = _extract_json_object(leaders_res.calldata)
+            if "__error__" in leader_data:
+                return False
+            if not isinstance(leader_data.get("is_violation"), bool):
+                return False
+            my_data = _extract_json_object(leader_fn())
+            if "__error__" in my_data:
+                return False
+            if not isinstance(my_data.get("is_violation"), bool):
+                return False
+            return my_data["is_violation"] == leader_data["is_violation"]
+        except Exception:
+            return False
+
+    try:
+        raw_result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+    except Exception as e:
+        _llm_error(f"AI evaluation failed or consensus not reached: {str(e)}")
+
+    try:
+        result_data = _extract_json_object(raw_result)
+    except Exception as e:
+        _llm_error(f"Failed to parse moderation result: {str(e)}")
+
+    if "__error__" in result_data:
+        _llm_error(str(result_data["__error__"]))
+    if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
+        _llm_error("Invalid LLM verdict: 'is_violation' must be a boolean")
+    if (
+        "reason" not in result_data
+        or not isinstance(result_data["reason"], str)
+        or not result_data["reason"].strip()
+    ):
+        _llm_error("Invalid LLM verdict: 'reason' must be a non-empty string")
+    return {
+        "is_violation": result_data["is_violation"],
+        "reason": result_data["reason"].strip(),
+    }
+
 @allow_storage
 @dataclass
 class Community:
@@ -141,21 +223,21 @@ class Forum(gl.Contract):
         min_flag_age_seconds: u256
     ) -> u256:
         if len(name) > 100:
-            raise gl.vm.UserError("Name too long")
+            _expected("Name too long")
         if len(description) > 2000:
-            raise gl.vm.UserError("Description too long")
+            _expected("Description too long")
         if len(constitution) > 5000:
-            raise gl.vm.UserError("Constitution too long")
+            _expected("Constitution too long")
         if min_reputation_to_post > starting_reputation:
-            raise gl.vm.UserError("min_reputation_to_post cannot exceed starting_reputation")
+            _expected("min_reputation_to_post cannot exceed starting_reputation")
         if appeal_window_seconds < 3600 or appeal_window_seconds > 2592000:
-            raise gl.vm.UserError("Appeal window must be between 1 hour and 30 days")
+            _expected("Appeal window must be between 1 hour and 30 days")
         if reputation_penalty_violation == 0:
-            raise gl.vm.UserError("Violation penalty must be greater than 0")
+            _expected("Violation penalty must be greater than 0")
         if reputation_reward_good_flag > reputation_penalty_bad_flag:
-            raise gl.vm.UserError("Good flag reward cannot exceed bad flag penalty")
+            _expected("Good flag reward cannot exceed bad flag penalty")
         if flag_cooldown_seconds < 60 or flag_cooldown_seconds > 86400:
-            raise gl.vm.UserError("Flag cooldown must be between 1 minute and 24 hours")
+            _expected("Flag cooldown must be between 1 minute and 24 hours")
             
         community_id = self.community_count
         self.communities[community_id] = Community(
@@ -228,9 +310,9 @@ class Forum(gl.Contract):
     @gl.public.write
     def create_post(self, community_id: u256, content: str) -> u256:
         if len(content) > 2000:
-            raise gl.vm.UserError("Content too long")
+            _expected("Content too long")
         if community_id >= self.community_count:
-            raise gl.vm.UserError("Community does not exist")
+            _expected("Community does not exist")
             
         community = self.communities[community_id]
         author = gl.message.sender_address
@@ -239,7 +321,7 @@ class Forum(gl.Contract):
         
         community = self.communities[community_id] # Fetch updated state
         if rep < community.min_reputation_to_post:
-            raise gl.vm.UserError("Reputation too low to post in this community")
+            _expected("Reputation too low to post in this community")
             
         post_id = self.post_count
         self.posts[post_id] = Post(
@@ -267,9 +349,9 @@ class Forum(gl.Contract):
     @gl.public.write
     def create_comment(self, post_id: u256, content: str) -> u256:
         if len(content) > 2000:
-            raise gl.vm.UserError("Content too long")
+            _expected("Content too long")
         if post_id >= self.post_count:
-            raise gl.vm.UserError("Post does not exist")
+            _expected("Post does not exist")
             
         post = self.posts[post_id]
         community_id = post.community_id
@@ -280,7 +362,7 @@ class Forum(gl.Contract):
         
         community = self.communities[community_id] # Fetch updated state
         if rep < community.min_reputation_to_post:
-            raise gl.vm.UserError("Reputation too low to comment in this community")
+            _expected("Reputation too low to comment in this community")
             
         comment_id = self.comment_count
         self.comments[comment_id] = Comment(
@@ -309,19 +391,19 @@ class Forum(gl.Contract):
     @gl.public.write
     def flag_post(self, post_id: u256) -> str:
         if post_id >= self.post_count:
-            raise gl.vm.UserError("Post does not exist")
+            _expected("Post does not exist")
             
         post = self.posts[post_id]
         if post.status != STATUS_ACTIVE:
-            raise gl.vm.UserError("Post is not active")
+            _expected("Post is not active")
             
         flagger = gl.message.sender_address
         if flagger == post.author:
-            raise gl.vm.UserError("You cannot flag your own content")
+            _expected("You cannot flag your own content")
         
         flag_key = f"{post_id}:{flagger.as_hex}"
         if self.has_flagged_post.get(flag_key, False):
-            raise gl.vm.UserError("You have already flagged this post")
+            _expected("You have already flagged this post")
             
         # Cooldown check
         community_id = post.community_id
@@ -329,13 +411,13 @@ class Forum(gl.Contract):
         last_flag = self.last_flag_time.get(cooldown_key, u256(0))
         community = self.communities[community_id]
         if self._tx_timestamp() < last_flag + community.flag_cooldown_seconds:
-            raise gl.vm.UserError("Flag cooldown active")
+            _expected("Flag cooldown active")
             
         # Sybil resistance check: min flag age
         rep_key = f"{community_id}:{flagger.as_hex}"
         join_time = self.member_join_time.get(rep_key, u256(0))
         if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
-            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
+            _expected("Account is too new to flag in this community (must post/comment first and wait)")
             
         self.last_flag_time[cooldown_key] = self._tx_timestamp()
         self.has_flagged_post[flag_key] = True
@@ -345,10 +427,10 @@ class Forum(gl.Contract):
         # If it was already flagged and judged, it wouldn't be ACTIVE.
         # So we process immediately.
         
-        post_content = post.content.replace('<', '&lt;').replace('>', '&gt;')
-        constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
-        
-        def moderation_task() -> dict:
+        post_content = _escape_untrusted(post.content)
+        constitution = _escape_untrusted(community.constitution)
+
+        def leader_fn() -> dict:
             prompt = f"""
 Evaluate the following forum post against the community constitution.
 Determine if it violates the constitution.
@@ -374,42 +456,9 @@ Return a JSON object with exactly two keys:
 """
             return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        def validator_task(leaders_res: gl.vm.Result) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                return False
-            
-            my_result = moderation_task()
-            try:
-                my_violation = bool(my_result.get("is_violation"))
-                leader_violation = bool(leaders_res.calldata.get("is_violation"))
-                return my_violation == leader_violation
-            except:
-                return False
-
-        try:
-            raw_result = gl.vm.run_nondet(moderation_task, validator_task)
-        except Exception as e:
-            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
-            
-        if isinstance(raw_result, str):
-            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-            try:
-                result_data = json.loads(raw_result)
-                if not isinstance(result_data, dict):
-                    raise ValueError("LLM returned non-dict JSON")
-            except Exception as e:
-                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
-        else:
-            result_data = raw_result
-            
-        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
-            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
-            
-        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
-            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
-            
-        is_violation = result_data["is_violation"]
-        reason = result_data["reason"].strip()
+        verdict = _run_verdict(leader_fn)
+        is_violation = verdict["is_violation"]
+        reason = verdict["reason"]
 
         if is_violation:
             post.status = STATUS_REMOVED
@@ -449,33 +498,33 @@ Return a JSON object with exactly two keys:
     @gl.public.write
     def appeal_post(self, post_id: u256, defense: str = "") -> str:
         if post_id >= self.post_count:
-            raise gl.vm.UserError("Post does not exist")
+            _expected("Post does not exist")
             
         post = self.posts[post_id]
         if post.status != STATUS_REMOVED:
-            raise gl.vm.UserError("Only removed posts can be appealed")
+            _expected("Only removed posts can be appealed")
             
         author = gl.message.sender_address
         if author != post.author:
-            raise gl.vm.UserError("Only the author can appeal")
+            _expected("Only the author can appeal")
             
         if post.appeal_used:
-            raise gl.vm.UserError("Appeal already used")
+            _expected("Appeal already used")
             
         if self._tx_timestamp() > post.appeal_deadline:
-            raise gl.vm.UserError("Appeal deadline has passed")
+            _expected("Appeal deadline has passed")
         
         if len(defense) > 2000:
-            raise gl.vm.UserError("Defense too long")
+            _expected("Defense too long")
             
         post.appeal_used = True
         community = self.communities[post.community_id]
         
-        defense = defense.replace('<', '&lt;').replace('>', '&gt;')
-        post_content = post.content.replace('<', '&lt;').replace('>', '&gt;')
-        constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
-        
-        def appeal_task() -> dict:
+        defense = _escape_untrusted(defense)
+        post_content = _escape_untrusted(post.content)
+        constitution = _escape_untrusted(community.constitution)
+
+        def leader_fn() -> dict:
             prompt = f"""
 Evaluate the following forum post against the community constitution.
 Determine if it violates the constitution.
@@ -507,41 +556,9 @@ Return a JSON object with exactly two keys:
 """
             return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        def validator_task(leaders_res: gl.vm.Result) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                return False
-            my_result = appeal_task()
-            try:
-                my_violation = bool(my_result.get("is_violation"))
-                leader_violation = bool(leaders_res.calldata.get("is_violation"))
-                return my_violation == leader_violation
-            except:
-                return False
-
-        try:
-            raw_result = gl.vm.run_nondet(appeal_task, validator_task)
-        except Exception as e:
-            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
-            
-        if isinstance(raw_result, str):
-            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-            try:
-                result_data = json.loads(raw_result)
-                if not isinstance(result_data, dict):
-                    raise ValueError("LLM returned non-dict JSON")
-            except Exception as e:
-                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
-        else:
-            result_data = raw_result
-            
-        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
-            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
-            
-        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
-            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
-            
-        is_violation = result_data["is_violation"]
-        reason = result_data["reason"].strip()
+        verdict = _run_verdict(leader_fn)
+        is_violation = verdict["is_violation"]
+        reason = verdict["reason"]
             
         post.appeal_verdict = reason
         
@@ -574,42 +591,42 @@ Return a JSON object with exactly two keys:
     @gl.public.write
     def flag_comment(self, comment_id: u256) -> str:
         if comment_id >= self.comment_count:
-            raise gl.vm.UserError("Comment does not exist")
+            _expected("Comment does not exist")
             
         comment = self.comments[comment_id]
         if comment.status != STATUS_ACTIVE:
-            raise gl.vm.UserError("Comment is not active")
+            _expected("Comment is not active")
             
         flagger = gl.message.sender_address
         if flagger == comment.author:
-            raise gl.vm.UserError("You cannot flag your own content")
+            _expected("You cannot flag your own content")
             
         flag_key = f"{comment_id}:{flagger.as_hex}"
         if self.has_flagged_comment.get(flag_key, False):
-            raise gl.vm.UserError("You have already flagged this comment")
+            _expected("You have already flagged this comment")
             
         community_id = comment.community_id
         cooldown_key = f"{community_id}:{flagger.as_hex}"
         last_flag = self.last_flag_time.get(cooldown_key, u256(0))
         community = self.communities[community_id]
         if self._tx_timestamp() < last_flag + community.flag_cooldown_seconds:
-            raise gl.vm.UserError("Flag cooldown active")
+            _expected("Flag cooldown active")
             
         # Sybil resistance check: min flag age
         rep_key = f"{community_id}:{flagger.as_hex}"
         join_time = self.member_join_time.get(rep_key, u256(0))
         if join_time == 0 or self._tx_timestamp() < join_time + community.min_flag_age_seconds:
-            raise gl.vm.UserError("Account is too new to flag in this community (must post/comment first and wait)")
+            _expected("Account is too new to flag in this community (must post/comment first and wait)")
             
         self.last_flag_time[cooldown_key] = self._tx_timestamp()
         self.has_flagged_comment[flag_key] = True
         comment.flag_count += 1
         
-        comment_content = comment.content.replace('<', '&lt;').replace('>', '&gt;')
-        constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
-        parent_post_content = self.posts[comment.post_id].content.replace('<', '&lt;').replace('>', '&gt;')
-        
-        def moderation_task() -> dict:
+        comment_content = _escape_untrusted(comment.content)
+        constitution = _escape_untrusted(community.constitution)
+        parent_post_content = _escape_untrusted(self.posts[comment.post_id].content)
+
+        def leader_fn() -> dict:
             prompt = f"""
 Evaluate the following forum comment against the community constitution.
 Determine if it violates the constitution.
@@ -642,41 +659,9 @@ Return a JSON object with exactly two keys:
 """
             return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        def validator_task(leaders_res: gl.vm.Result) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                return False
-            my_result = moderation_task()
-            try:
-                my_violation = bool(my_result.get("is_violation"))
-                leader_violation = bool(leaders_res.calldata.get("is_violation"))
-                return my_violation == leader_violation
-            except:
-                return False
-
-        try:
-            raw_result = gl.vm.run_nondet(moderation_task, validator_task)
-        except Exception as e:
-            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
-            
-        if isinstance(raw_result, str):
-            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-            try:
-                result_data = json.loads(raw_result)
-                if not isinstance(result_data, dict):
-                    raise ValueError("LLM returned non-dict JSON")
-            except Exception as e:
-                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
-        else:
-            result_data = raw_result
-            
-        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
-            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
-            
-        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
-            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
-            
-        is_violation = result_data["is_violation"]
-        reason = result_data["reason"].strip()
+        verdict = _run_verdict(leader_fn)
+        is_violation = verdict["is_violation"]
+        reason = verdict["reason"]
 
         if is_violation:
             comment.status = STATUS_REMOVED
@@ -714,34 +699,34 @@ Return a JSON object with exactly two keys:
     @gl.public.write
     def appeal_comment(self, comment_id: u256, defense: str = "") -> str:
         if comment_id >= self.comment_count:
-            raise gl.vm.UserError("Comment does not exist")
+            _expected("Comment does not exist")
             
         comment = self.comments[comment_id]
         if comment.status != STATUS_REMOVED:
-            raise gl.vm.UserError("Only removed comments can be appealed")
+            _expected("Only removed comments can be appealed")
             
         author = gl.message.sender_address
         if author != comment.author:
-            raise gl.vm.UserError("Only the author can appeal")
+            _expected("Only the author can appeal")
             
         if comment.appeal_used:
-            raise gl.vm.UserError("Appeal already used")
+            _expected("Appeal already used")
             
         if self._tx_timestamp() > comment.appeal_deadline:
-            raise gl.vm.UserError("Appeal deadline has passed")
+            _expected("Appeal deadline has passed")
             
         if len(defense) > 2000:
-            raise gl.vm.UserError("Defense too long")
+            _expected("Defense too long")
             
         comment.appeal_used = True
         community = self.communities[comment.community_id]
         
-        defense = defense.replace('<', '&lt;').replace('>', '&gt;')
-        comment_content = comment.content.replace('<', '&lt;').replace('>', '&gt;')
-        constitution = community.constitution.replace('<', '&lt;').replace('>', '&gt;')
-        parent_post_content = self.posts[comment.post_id].content.replace('<', '&lt;').replace('>', '&gt;')
-        
-        def appeal_task() -> dict:
+        defense = _escape_untrusted(defense)
+        comment_content = _escape_untrusted(comment.content)
+        constitution = _escape_untrusted(community.constitution)
+        parent_post_content = _escape_untrusted(self.posts[comment.post_id].content)
+
+        def leader_fn() -> dict:
             prompt = f"""
 Evaluate the following forum comment against the community constitution.
 Determine if it violates the constitution.
@@ -780,41 +765,9 @@ Return a JSON object with exactly two keys:
 """
             return gl.nondet.exec_prompt(prompt, response_format="json")
 
-        def validator_task(leaders_res: gl.vm.Result) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                return False
-            my_result = appeal_task()
-            try:
-                my_violation = bool(my_result.get("is_violation"))
-                leader_violation = bool(leaders_res.calldata.get("is_violation"))
-                return my_violation == leader_violation
-            except:
-                return False
-
-        try:
-            raw_result = gl.vm.run_nondet(appeal_task, validator_task)
-        except Exception as e:
-            raise gl.vm.UserError(f"AI evaluation failed or consensus not reached: {str(e)}")
-            
-        if isinstance(raw_result, str):
-            raw_result = raw_result.strip().replace("```json", "").replace("```", "")
-            try:
-                result_data = json.loads(raw_result)
-                if not isinstance(result_data, dict):
-                    raise ValueError("LLM returned non-dict JSON")
-            except Exception as e:
-                raise gl.vm.UserError(f"Failed to parse moderation result: {str(e)}")
-        else:
-            result_data = raw_result
-            
-        if "is_violation" not in result_data or not isinstance(result_data["is_violation"], bool):
-            raise gl.vm.UserError("Invalid LLM verdict: 'is_violation' must be a boolean")
-            
-        if "reason" not in result_data or not isinstance(result_data["reason"], str) or not result_data["reason"].strip():
-            raise gl.vm.UserError("Invalid LLM verdict: 'reason' must be a non-empty string")
-            
-        is_violation = result_data["is_violation"]
-        reason = result_data["reason"].strip()
+        verdict = _run_verdict(leader_fn)
+        is_violation = verdict["is_violation"]
+        reason = verdict["reason"]
             
         comment.appeal_verdict = reason
         
@@ -904,6 +857,10 @@ Return a JSON object with exactly two keys:
             "flagged_at": c.flagged_at,
             "successful_flagger": c.successful_flagger.as_hex
         }
+
+    @gl.public.view
+    def ping(self) -> str:
+        return "ok"
 
     @gl.public.view
     def get_community_count(self) -> u256:

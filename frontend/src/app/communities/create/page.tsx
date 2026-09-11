@@ -119,6 +119,10 @@ export default function CreateCommunityPage() {
       newErrors.repRewardGoodFlag = "Good flag reward cannot exceed bad flag penalty"
     }
 
+    if (Number(minRepToPost) > Number(startingRep)) {
+      newErrors.minRepToPost = "Min rep to post cannot exceed starting reputation"
+    }
+
     setErrors(newErrors)
     
     if (Object.keys(newErrors).length > 0) return
@@ -199,9 +203,9 @@ export default function CreateCommunityPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={isLocked}
-                className={`bg-[#0D091B] ${errors.description ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
+                className={`bg-[#0D091B] ${errors.name ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
               />
-              {errors.description && <p className="text-red-500 text-xs font-semibold mt-1">{errors.description}</p>}
+              {errors.name && <p className="text-red-500 text-xs font-semibold mt-1">{errors.name}</p>}
             </div>
             
             <div className="space-y-2">
@@ -215,9 +219,9 @@ export default function CreateCommunityPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={isLocked}
-                className={`bg-[#0D091B] ${errors.name ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
+                className={`bg-[#0D091B] ${errors.description ? 'border-red-500' : 'border-[#291F4A]'} focus-visible:ring-primary h-12 text-white`}
               />
-              {errors.name && <p className="text-red-500 text-xs font-semibold mt-1">{errors.name}</p>}
+              {errors.description && <p className="text-red-500 text-xs font-semibold mt-1">{errors.description}</p>}
             </div>
 
             <div className="space-y-2">

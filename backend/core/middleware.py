@@ -13,6 +13,7 @@ class RateLimitMiddleware:
             (re.compile(r'^/api/auth/'), 20),
             (re.compile(r'^/api/notifications/$'), 100), # Polling endpoint
             (re.compile(r'^/api/notifications/'), 30), # Other notification endpoints (mutations)
+            (re.compile(r'^/api/indexer/poll/'), 10),
             (re.compile(r'^/api/indexer/sync-request/'), 30),
             (re.compile(r'^/api/indexer/'), 60),
             (re.compile(r'^/api/communities/\d+/$'), 120), # Singular community

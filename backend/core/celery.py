@@ -9,7 +9,9 @@ app.autodiscover_tasks()
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    # Poll every 60 seconds
+    from django.conf import settings
+    if not settings.USE_CELERY:
+        return
     sender.add_periodic_task(300.0, sync_with_genlayer.s(), name='sync every 300s')
 
 @app.task

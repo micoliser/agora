@@ -75,7 +75,7 @@ export function useAuth() {
   const logout = async () => {
     if (token) {
       try {
-        await fetch('http://localhost:8000/api/auth/logout/', {
+        await fetch(`${API_URL}/api/auth/logout/`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
         });

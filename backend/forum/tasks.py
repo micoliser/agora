@@ -25,6 +25,39 @@ _DUMMY_ACCOUNT = Account.create()
 _client_instance = None
 
 
+def wipe_indexer_cache(*, reason: str) -> None:
+    """Drop mirrored rows when the Studio contract address changes."""
+    logger.warning("wiping indexer cache: %s", reason)
+    Comment.objects.all().delete()
+    Post.objects.all().delete()
+    MemberReputation.objects.all().delete()
+    Notification.objects.all().delete()
+    UserActivity.objects.all().delete()
+    Community.objects.all().delete()
+    state, _ = SyncState.objects.get_or_create(id=1)
+    state.last_community_id_synced = -1
+    state.last_post_id_synced = -1
+    state.last_comment_id_synced = -1
+    state.contract_address = ""
+    state.save()
+
+
+def ensure_contract_address() -> None:
+    addr = (settings.GENLAYER_CONTRACT_ADDRESS or "").strip().lower()
+    if not addr or addr == "0x...":
+        return
+    state, _ = SyncState.objects.get_or_create(id=1)
+    stored = (state.contract_address or "").strip().lower()
+    if stored and stored != addr:
+        wipe_indexer_cache(
+            reason=f"GENLAYER_CONTRACT_ADDRESS changed ({stored} -> {addr})"
+        )
+        state, _ = SyncState.objects.get_or_create(id=1)
+    if (state.contract_address or "").strip().lower() != addr:
+        state.contract_address = addr
+        state.save(update_fields=["contract_address"])
+
+
 def _get_genlayer_client():
     global _client_instance
     if _client_instance is None:
@@ -90,7 +123,11 @@ def _sync_single_community(community_id: int) -> bool:
                 "reputation_penalty_bad_flag": com_data.get(
                     "reputation_penalty_bad_flag", 0
                 ),
+                "reputation_reward_good_flag": com_data.get(
+                    "reputation_reward_good_flag", 2
+                ),
                 "flag_cooldown_seconds": com_data.get("flag_cooldown_seconds", 0),
+                "min_flag_age_seconds": com_data.get("min_flag_age_seconds", 0),
                 "created_at": com_data.get("created_at", 0),
             },
         )
@@ -111,6 +148,12 @@ def _sync_single_post(post_id: int, current_state=None) -> bool:
                     time.sleep(2)
                     continue
             community = Community.objects.filter(id=p_data.get("community_id")).first()
+            if not community and p_data.get("community_id") is not None:
+                _sync_single_community(int(p_data.get("community_id")))
+                community = Community.objects.filter(id=p_data.get("community_id")).first()
+            if not community:
+                time.sleep(2)
+                continue
             if community:
                 old_post = Post.objects.filter(id=post_id).first()
                 new_status = p_data.get("status", 0)
@@ -209,97 +252,99 @@ def _sync_single_comment(comment_id: int, current_state=None) -> bool:
                     time.sleep(2)
                     continue
             community = Community.objects.filter(id=c_data.get("community_id")).first()
-        post = Post.objects.filter(id=c_data.get("post_id")).first()
-        if community and post:
-            old_comment = Comment.objects.filter(id=comment_id).first()
-            new_status = c_data.get("status", 0)
-            new_appeal_used = c_data.get("appeal_used", False)
-            author = c_data.get("author", "")
-            successful_flagger = c_data.get("successful_flagger", "")
-            link = f"/post/{post.id}"
+            post = Post.objects.filter(id=c_data.get("post_id")).first()
+            if not community and c_data.get("community_id") is not None:
+                _sync_single_community(int(c_data.get("community_id")))
+                community = Community.objects.filter(id=c_data.get("community_id")).first()
+            if not post and c_data.get("post_id") is not None:
+                _sync_single_post(int(c_data.get("post_id")))
+                post = Post.objects.filter(id=c_data.get("post_id")).first()
+            if community and post:
+                old_comment = Comment.objects.filter(id=comment_id).first()
+                new_status = c_data.get("status", 0)
+                new_appeal_used = c_data.get("appeal_used", False)
+                author = c_data.get("author", "")
+                successful_flagger = c_data.get("successful_flagger", "")
+                link = f"/post/{post.id}"
 
-            if not old_comment:
-                # New Reply Notification
-                if author != post.author:
-                    Notification.objects.get_or_create(
-                        user_address=post.author,
-                        notification_type="REPLY",
-                        link=link,
-                        defaults={"message": "Someone replied to your post."},
-                    )
-            else:
-                # Content Removed
-                if old_comment.status == 0 and new_status == 1:
-                    Notification.objects.get_or_create(
-                        user_address=author,
-                        notification_type="CONTENT_REMOVED",
-                        link=link,
-                        defaults={"message": "Your comment was flagged and removed."},
-                    )
-                    if successful_flagger:
+                if not old_comment:
+                    if author != post.author:
                         Notification.objects.get_or_create(
-                            user_address=successful_flagger,
-                            notification_type="FLAG_ACCEPTED",
-                            link=f"/community/{community.id}",
-                            defaults={
-                                "message": "Your flag was accepted! You gained reputation."
-                            },
+                            user_address=post.author,
+                            notification_type="REPLY",
+                            link=link,
+                            defaults={"message": "Someone replied to your post."},
                         )
+                else:
+                    if old_comment.status == 0 and new_status == 1:
+                        Notification.objects.get_or_create(
+                            user_address=author,
+                            notification_type="CONTENT_REMOVED",
+                            link=link,
+                            defaults={"message": "Your comment was flagged and removed."},
+                        )
+                        if successful_flagger:
+                            Notification.objects.get_or_create(
+                                user_address=successful_flagger,
+                                notification_type="FLAG_ACCEPTED",
+                                link=f"/community/{community.id}",
+                                defaults={
+                                    "message": "Your flag was accepted! You gained reputation."
+                                },
+                            )
 
-                # Appeal Granted
-                if old_comment.status == 1 and new_status == 2:
-                    Notification.objects.get_or_create(
-                        user_address=author,
-                        notification_type="APPEAL_GRANTED",
-                        link=link,
-                        defaults={
-                            "message": "Your appeal was granted! Your comment is restored."
-                        },
-                    )
-                    if old_comment.successful_flagger or successful_flagger:
-                        flagger_to_notify = (
-                            old_comment.successful_flagger or successful_flagger
-                        )
+                    if old_comment.status == 1 and new_status == 2:
                         Notification.objects.get_or_create(
-                            user_address=flagger_to_notify,
-                            notification_type="REP_REWARD_REVERSED",
+                            user_address=author,
+                            notification_type="APPEAL_GRANTED",
                             link=link,
                             defaults={
-                                "message": "A comment you flagged was appealed and restored. Your reputation reward was reversed."
+                                "message": "Your appeal was granted! Your comment is restored."
+                            },
+                        )
+                        if old_comment.successful_flagger or successful_flagger:
+                            flagger_to_notify = (
+                                old_comment.successful_flagger or successful_flagger
+                            )
+                            Notification.objects.get_or_create(
+                                user_address=flagger_to_notify,
+                                notification_type="REP_REWARD_REVERSED",
+                                link=link,
+                                defaults={
+                                    "message": "A comment you flagged was appealed and restored. Your reputation reward was reversed."
+                                },
+                            )
+
+                    if not old_comment.appeal_used and new_appeal_used and new_status == 3:
+                        Notification.objects.get_or_create(
+                            user_address=author,
+                            notification_type="APPEAL_DENIED",
+                            link=link,
+                            defaults={
+                                "message": "Your appeal was denied. The comment remains banned."
                             },
                         )
 
-                # Appeal Denied
-                if not old_comment.appeal_used and new_appeal_used and new_status == 3:
-                    Notification.objects.get_or_create(
-                        user_address=author,
-                        notification_type="APPEAL_DENIED",
-                        link=link,
-                        defaults={
-                            "message": "Your appeal was denied. The comment remains banned."
-                        },
-                    )
-
-            Comment.objects.update_or_create(
-                id=comment_id,
-                defaults={
-                    "community": community,
-                    "post": post,
-                    "author": author,
-                    "content": nh3.clean(c_data.get("content", "")),
-                    "status": new_status,
-                    "flag_count": c_data.get("flag_count", 0),
-                    "moderation_verdict": str(c_data.get("moderation_verdict", "")),
-                    "appeal_used": new_appeal_used,
-                    "appeal_verdict": str(c_data.get("appeal_verdict", "")),
-                    "appeal_deadline": c_data.get("appeal_deadline", 0),
-                    "created_at": c_data.get("created_at", 0),
-                    "flagged_at": c_data.get("flagged_at", 0),
-                    "successful_flagger": successful_flagger,
-                },
-            )
-            _sync_member_reputation(community.id, c_data.get("author", ""))
-            return True
+                Comment.objects.update_or_create(
+                    id=comment_id,
+                    defaults={
+                        "community": community,
+                        "post": post,
+                        "author": author,
+                        "content": nh3.clean(c_data.get("content", "")),
+                        "status": new_status,
+                        "flag_count": c_data.get("flag_count", 0),
+                        "moderation_verdict": str(c_data.get("moderation_verdict", "")),
+                        "appeal_used": new_appeal_used,
+                        "appeal_verdict": str(c_data.get("appeal_verdict", "")),
+                        "appeal_deadline": c_data.get("appeal_deadline", 0),
+                        "created_at": c_data.get("created_at", 0),
+                        "flagged_at": c_data.get("flagged_at", 0),
+                        "successful_flagger": successful_flagger,
+                    },
+                )
+                _sync_member_reputation(community.id, c_data.get("author", ""))
+                return True
         time.sleep(2)
     return False
 
@@ -321,6 +366,7 @@ def _sync_user_activity(address: str) -> bool:
 
 
 def sync_entity(entity_type: str, entity_id, current_state=None) -> bool:
+    ensure_contract_address()
     if entity_type == "community":
         return _sync_single_community(int(entity_id))
     elif entity_type in ("post", "community_posts"):
@@ -334,11 +380,27 @@ def sync_entity(entity_type: str, entity_id, current_state=None) -> bool:
         return False
 
 
-def poll_genlayer_state(entity_type=None):
-    from django.db.models import Q
+def enqueue_sync_entity(entity_type: str, entity_id, current_state=None) -> str:
+    """
+    Fast-path after a wallet tx.
+    Local (USE_CELERY=true): queue Celery. Production cron stack: run inline.
+    """
+    if settings.USE_CELERY:
+        async_sync_entity.delay(entity_type, entity_id, current_state)
+        return "queued"
+    ok = sync_entity(entity_type, entity_id, current_state)
+    return "synced" if ok else "pending"
 
+
+def poll_genlayer_state(entity_type=None, *, full=False):
     try:
+        ensure_contract_address()
         state, _ = SyncState.objects.get_or_create(id=1)
+        if full:
+            state.last_community_id_synced = -1
+            state.last_post_id_synced = -1
+            state.last_comment_id_synced = -1
+            state.save()
 
         # 1. Sync Communities
         if entity_type is None or entity_type == "community":
@@ -352,8 +414,10 @@ def poll_genlayer_state(entity_type=None):
                                 success_up_to = i
                         else:
                             logger.warning(f"Failed to fetch community {i}")
+                            break
                     except Exception as e:
                         logger.warning(f"Error fetching community {i}: {e}")
+                        break
                 if success_up_to > state.last_community_id_synced:
                     state.last_community_id_synced = success_up_to
                     state.save()
@@ -362,43 +426,46 @@ def poll_genlayer_state(entity_type=None):
         if entity_type is None or entity_type == "community_posts":
             post_count = call_read_contract("get_post_count", [])
             if post_count is not None:
-                # Sync new posts only to prevent hitting rate limits
                 success_up_to = state.last_post_id_synced
                 for i in range(state.last_post_id_synced + 1, int(post_count)):
                     try:
-                        _sync_single_post(i)
+                        if _sync_single_post(i):
+                            if i == success_up_to + 1:
+                                success_up_to = i
+                        else:
+                            logger.warning(f"Failed to fetch post {i}")
+                            break
                     except Exception as e:
                         logger.warning(f"Error syncing post {i}: {e}")
-
-                # Update watermark for new posts
-                new_max = int(post_count) - 1
-                if new_max > state.last_post_id_synced:
-                    state.last_post_id_synced = new_max
+                        break
+                if success_up_to > state.last_post_id_synced:
+                    state.last_post_id_synced = success_up_to
                     state.save()
 
         # 3. Sync Comments
         if entity_type is None or entity_type == "post_comments":
             comment_count = call_read_contract("get_comment_count", [])
             if comment_count is not None:
-                # Sync new comments only to prevent hitting rate limits
                 success_up_to = state.last_comment_id_synced
                 for i in range(state.last_comment_id_synced + 1, int(comment_count)):
                     try:
-                        _sync_single_comment(i)
+                        if _sync_single_comment(i):
+                            if i == success_up_to + 1:
+                                success_up_to = i
+                        else:
+                            logger.warning(f"Failed to fetch comment {i}")
+                            break
                     except Exception as e:
                         logger.warning(f"Error syncing comment {i}: {e}")
-
-                # Update watermark for new comments
-                new_max = int(comment_count) - 1
-                if new_max > state.last_comment_id_synced:
-                    state.last_comment_id_synced = new_max
+                        break
+                if success_up_to > state.last_comment_id_synced:
+                    state.last_comment_id_synced = success_up_to
                     state.save()
 
         return True
 
     except Exception as e:
         logger.error(f"Sync error: {e}")
-        time.sleep(10)
         return False
 
 

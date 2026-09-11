@@ -77,8 +77,21 @@ CELERY_WORKER_SEND_TASK_EVENTS = False
 CELERY_WORKER_DISABLE_GOSSIP = True
 CELERY_WORKER_DISABLE_MINGLE = True
 
-GENLAYER_CONTRACT_ADDRESS = "0x..." # To be filled manually by user after deploy
-GENLAYER_RPC_URL = "https://studio.genlayer.com/rpc" # Or studionet / bradbury
+# Local: USE_CELERY=true (worker + beat). Production: false, Render cron hits POST /api/indexer/poll/.
+_use_celery_env = os.environ.get("USE_CELERY")
+if _use_celery_env is None:
+    USE_CELERY = DEBUG
+else:
+    USE_CELERY = _use_celery_env.lower() == "true"
+
+# Shared secret for POST /api/indexer/poll/ (Render cron). Empty only when DEBUG=True.
+SYNC_SHARED_SECRET = os.environ.get("SYNC_SHARED_SECRET", "")
+if not DEBUG and not SYNC_SHARED_SECRET:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "SYNC_SHARED_SECRET must be set when DEBUG=False. "
+        "An empty secret leaves POST /api/indexer/poll/ open to GenLayer RPC abuse."
+    )
 
 
 ROOT_URLCONF = 'core.urls'
@@ -107,7 +120,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 GENLAYER_CONTRACT_ADDRESS = os.environ.get('GENLAYER_CONTRACT_ADDRESS')
-GENLAYER_RPC_URL = os.environ.get('GENLAYER_RPC_URL', 'https://studio.genlayer.com/rpc')
+GENLAYER_RPC_URL = os.environ.get('GENLAYER_RPC_URL', 'https://studio.genlayer.com/api')
 
 
 # Database

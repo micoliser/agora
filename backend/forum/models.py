@@ -13,6 +13,7 @@ class Community(models.Model):
     reputation_penalty_bad_flag = models.IntegerField()
     reputation_reward_good_flag = models.IntegerField(default=2)
     flag_cooldown_seconds = models.IntegerField()
+    min_flag_age_seconds = models.IntegerField(default=0)
     created_at = models.IntegerField()
 
 class Post(models.Model):
@@ -60,6 +61,7 @@ class SyncState(models.Model):
     last_community_id_synced = models.IntegerField(default=-1)
     last_post_id_synced = models.IntegerField(default=-1)
     last_comment_id_synced = models.IntegerField(default=-1)
+    contract_address = models.CharField(max_length=42, blank=True, default="")
 
 class UserActivity(models.Model):
     address = models.CharField(max_length=42, primary_key=True)
