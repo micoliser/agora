@@ -22,12 +22,9 @@ export function requireMetaMaskProvider() {
   if (typeof window === "undefined") {
     throw new Error("Wallet is only available in the browser.");
   }
-  const provider = window.ethereum;
+  const provider = (window as any).genlayer?.provider || window.ethereum;
   if (!provider) {
-    throw new Error("No wallet found. Install MetaMask.");
-  }
-  if (!provider.isMetaMask) {
-    throw new Error("Only MetaMask is supported. Switch to MetaMask and retry.");
+    throw new Error("No wallet found. Please install a Web3 wallet like MetaMask.");
   }
   return provider;
 }

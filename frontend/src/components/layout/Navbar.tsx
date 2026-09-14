@@ -30,11 +30,16 @@ export function Navbar() {
     try {
       requireMetaMaskProvider()
       if (!isConnected) {
-        await connectAsync({ connector: injected({ target: 'metaMask' }) })
+        await connectAsync({ connector: injected() })
       }
       await ensureStudionetChain()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Wallet connect failed:', err)
+      if (err.name === 'ProviderNotFoundError' || err.message?.includes('Provider not found')) {
+        alert("No compatible wallet provider found. Please install MetaMask or another Web3 wallet.");
+      } else {
+        alert(err.message || "Failed to connect wallet.");
+      }
     } finally {
       setConnectBusy(false)
     }

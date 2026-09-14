@@ -27,7 +27,7 @@ export const studionetChain = defineChain({
 
 export const wagmiConfig = createConfig({
   chains: [studionetChain],
-  connectors: [injected({ target: "metaMask" })],
+  connectors: [injected()],
   transports: {
     [studionetChain.id]: http(STUDIONET_RPC),
   },
@@ -54,7 +54,7 @@ async function readProviderChainId(
 }
 
 export async function ensureStudionetChain(): Promise<void> {
-  const eth = typeof window !== "undefined" ? window.ethereum : undefined;
+  const eth = typeof window !== "undefined" ? ((window as any).genlayer?.provider || window.ethereum) : undefined;
   if (!eth?.request) {
     throw new Error("No Ethereum provider found. Install MetaMask.");
   }
