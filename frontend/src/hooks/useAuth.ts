@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
+import { stringToHex } from 'viem';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -41,7 +42,7 @@ export function useAuth() {
         if (e.message?.includes('getChainId is not a function')) {
           const provider = (window as any).genlayer?.provider || (window as any).ethereum;
           if (provider) {
-            const hexMessage = '0x' + Buffer.from(message, 'utf8').toString('hex');
+            const hexMessage = stringToHex(message);
             signature = await provider.request({
               method: 'personal_sign',
               params: [hexMessage, address],
