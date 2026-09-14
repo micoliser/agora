@@ -91,6 +91,8 @@ export function useAuth() {
     if (isInitializing) return;
     if (isConnected && address && !token) {
       login();
+    } else if (!isConnected && token) {
+      logout();
     }
   }, [isConnected, address, token, isInitializing]);
 

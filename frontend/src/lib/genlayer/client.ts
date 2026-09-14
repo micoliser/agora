@@ -18,19 +18,7 @@ export function studioChain() {
   return studionet || fallbackChain;
 }
 
-export function requireMetaMaskProvider() {
-  if (typeof window === "undefined") {
-    throw new Error("Wallet is only available in the browser.");
-  }
-  const provider = (window as any).genlayer?.provider || window.ethereum;
-  if (!provider) {
-    throw new Error("No wallet found. Please install a Web3 wallet like MetaMask.");
-  }
-  return provider;
-}
-
-export function createWriteClient(account: `0x${string}`) {
-  const provider = requireMetaMaskProvider();
+export function createWriteClient(account: `0x${string}`, provider: any) {
   return createClient({
     chain: studioChain(),
     account,

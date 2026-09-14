@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { createWriteClient } from "@/lib/genlayer/client";
-import { ensureStudionetChain } from "@/lib/genlayer/chain";
+import { STUDIONET_CHAIN_ID } from "@/lib/genlayer/chain";
 
 /** genlayer-js TransactionStatus numeric codes (do not treat 3/4 as terminal). */
 const STATUS_BY_CODE: Record<string, string> = {
@@ -138,7 +138,8 @@ function humanizeTxError(err: unknown): string {
 }
 
 export function useGenLayerWrite() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector, chainId } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,7 +151,7 @@ export function useGenLayerWrite() {
       onTxHash?: (hash: string) => void,
       value?: bigint,
     ) => {
-      if (!isConnected || !address) {
+      if (!isConnected || !address || !connector) {
         throw new Error("Wallet not connected");
       }
       if (!contractAddress?.trim()) {
@@ -161,8 +162,19 @@ export function useGenLayerWrite() {
         setIsPending(true);
         setError(null);
 
-        await ensureStudionetChain();
-        const client = createWriteClient(address as `0x${string}`);
+        if (chainId !== STUDIONET_CHAIN_ID) {
+          if (!switchChainAsync) {
+            throw new Error("Cannot switch chain. Please switch network in your wallet manually.");
+          }
+          await switchChainAsync({ chainId: STUDIONET_CHAIN_ID });
+        }
+
+        const provider = await connector.getProvider();
+        if (!provider) {
+          throw new Error("Wallet provider not found.");
+        }
+
+        const client = createWriteClient(address as `0x${string}`, provider);
         try {
           await client.connect("studionet");
         } catch (err) {

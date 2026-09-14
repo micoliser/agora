@@ -1,6 +1,6 @@
 import { defineChain } from "viem";
-import { createConfig, http } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { http } from "wagmi";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { studionet as genlayerStudionet } from "genlayer-js/chains";
 
 export const STUDIONET_CHAIN_ID = 61999;
@@ -25,9 +25,10 @@ export const studionetChain = defineChain({
   },
 });
 
-export const wagmiConfig = createConfig({
+export const wagmiConfig = getDefaultConfig({
+  appName: 'Agora',
+  projectId: 'YOUR_PROJECT_ID', // Replace with your WalletConnect Project ID
   chains: [studionetChain],
-  connectors: [injected()],
   transports: {
     [studionetChain.id]: http(STUDIONET_RPC),
   },
