@@ -2,13 +2,14 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
 import { stringToHex } from 'viem';
+import { toast } from 'sonner';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 let isLoggingIn = false;
 
 export function useAuth() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, isDisconnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [token, setToken] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -36,24 +37,7 @@ export function useAuth() {
 
       const message = `Login to Agora.\nNonce: ${nonceData.nonce}`;
       let signature;
-      try {
-        signature = await signMessageAsync({ message });
-      } catch (e: any) {
-        if (e.message?.includes('getChainId is not a function')) {
-          const provider = (window as any).genlayer?.provider || (window as any).ethereum;
-          if (provider) {
-            const hexMessage = stringToHex(message);
-            signature = await provider.request({
-              method: 'personal_sign',
-              params: [hexMessage, address],
-            });
-          } else {
-            throw e;
-          }
-        } else {
-          throw e;
-        }
-      }
+      signature = await signMessageAsync({ message });
 
       const verifyRes = await fetch(`${API_URL}/api/auth/verify/`, {
         method: 'POST',
@@ -66,8 +50,9 @@ export function useAuth() {
         localStorage.setItem('jwt', verifyData.token);
         setToken(verifyData.token);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Login failed:", e);
+      toast.error(`Login failed: ${e?.message || 'Unknown error'}`);
     } finally {
       isLoggingIn = false;
     }
@@ -92,10 +77,10 @@ export function useAuth() {
     if (isInitializing) return;
     if (isConnected && address && !token) {
       login();
-    } else if (!isConnected && token) {
+    } else if (isDisconnected && token) {
       logout();
     }
-  }, [isConnected, address, token, isInitializing]);
+  }, [isConnected, isDisconnected, address, token, isInitializing]);
 
   return { token, isAuthenticated: !!token, login, logout };
 }
