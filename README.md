@@ -44,17 +44,17 @@ To prevent bad actors from spinning up hundreds of new wallets to spam false fla
 - **Autonomous AI Moderation:** No human moderators needed. LLMs enforce the rules based on the community's written constitution.
 - **Reputation Economics:** Users build reputation through positive contributions. Reputation is staked when flagging content, preventing spam flags and abuse.
 - **Optimized Caching & UX:** A fast-path Django indexer syncs contract state to a PostgreSQL database, providing web2-like speeds for browsing. The frontend employs Promise-deduplication caching to share GenLayer reads across components, preventing rate-limiting on complex screens.
-- **Wallet-Based Auth (SIWE):** Secure Sign-In with Ethereum for seamless, passwordless login to protect off-chain features (like notifications).
+- **Wallet-Based Auth (SIWE):** Secure Sign-In with Ethereum powered by **RainbowKit** and **wagmi** for seamless, passwordless login to protect off-chain features (like notifications).
 - **Fail-Closed Polling:** Resilient frontend transaction polling that safely catches contract reverts and GenLayer network timeouts without leaving the user in an infinite loading state.
 
 ---
 
 ## 🏗️ Architecture & Deployment
 
-Agora is built as a monorepo containing three distinct layers, architected for a modern managed-service deployment (Vercel + Render + Supabase + Upstash):
+Agora is built as a monorepo containing three distinct layers, architected for a modern managed-service deployment (Vercel + Render + Supabase):
 
 1. **Contract Layer (`contracts/`):** The GenLayer Intelligent Contract written in Python (GenVM). It acts as the ultimate source of truth, managing communities, posts, reputation, and executing AI moderation logic.
-2. **Backend Layer (`backend/`):** A Django application running on **Render**. It uses **Supabase** (PostgreSQL) for indexing the contract state, and **Upstash** (Redis) as a broker for Celery worker and beat tasks to manage background syncing.
+2. **Backend Layer (`backend/`):** A Django application running on **Render**. It uses **Supabase** (PostgreSQL) for indexing the contract state. *(Note: Celery and Redis are used for background syncing in local development, but production indexing is handled directly by the Django application).*
 3. **Frontend Layer (`frontend/`):** A Next.js App Router application deployed on **Vercel**, interacting with both the Django backend for fast reads and the GenLayer blockchain for executing write transactions.
 
 ### Data Flow (Write Actions)
@@ -62,7 +62,7 @@ Agora is built as a monorepo containing three distinct layers, architected for a
 ```mermaid
 flowchart LR
     A["User Wallet"] -->|Sign Tx| B("GenLayer Contract")
-    B -->|Event Emitted| C{"Celery Indexer"}
+    B -->|Event Emitted| C{"Django Indexer"}
     C -->|Update Supabase DB| D["Django API"]
     D --> E["Frontend Updates"]
 ```
